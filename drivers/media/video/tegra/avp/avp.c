@@ -953,6 +953,8 @@ static int avp_init(struct tegra_avp_info *avp, const char *fw_file)
 	wmb();
 	release_firmware(avp_fw);
 
+	tegra_init_legacy_irq_cop();
+
 	ret = avp_reset(avp, AVP_KERNEL_VIRT_BASE);
 	if (ret) {
 		pr_err("%s: cannot reset the AVP.. aborting..\n", __func__);
