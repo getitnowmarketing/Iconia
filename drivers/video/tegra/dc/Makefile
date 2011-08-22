@@ -1,4 +1,5 @@
 obj-y += dc.o
+obj-y += dc_input.o
 obj-y += rgb.o
 obj-$(CONFIG_TEGRA_HDMI) += hdmi.o
 obj-$(CONFIG_TEGRA_HDMI) += nvhdcp.o
