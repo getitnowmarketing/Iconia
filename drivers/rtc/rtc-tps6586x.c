@@ -304,6 +304,8 @@ static int __devinit tps6586x_rtc_probe(struct platform_device *pdev)
 	rtc->epoch_start = mktime(epoch->year, epoch->month, epoch->day,
 				  epoch->hour, epoch->min, epoch->sec);
 
+	device_init_wakeup(&pdev->dev, 1);
+
 	rtc->rtc = rtc_device_register("tps6586x-rtc", &pdev->dev,
 				       &tps6586x_rtc_ops, THIS_MODULE);
 
@@ -332,7 +334,6 @@ static int __devinit tps6586x_rtc_probe(struct platform_device *pdev)
 			dev_warn(&pdev->dev, "unable to request IRQ(%d)\n", rtc->irq);
 			rtc->irq = -1;
 		} else {
-			device_init_wakeup(&pdev->dev, 1);
 			enable_irq_wake(rtc->irq);
 			disable_irq(rtc->irq);
 		}
@@ -343,6 +344,7 @@ static int __devinit tps6586x_rtc_probe(struct platform_device *pdev)
 fail:
 	if (!IS_ERR_OR_NULL(rtc->rtc))
 		rtc_device_unregister(rtc->rtc);
+	device_init_wakeup(&pdev->dev, 0);
 	kfree(rtc);
 	return err;
 }
