@@ -274,6 +274,9 @@ static __initdata struct tegra_clk_init_table ventana_clk_init_table[] = {
 #define USB_PID_PICA_3G_RNDIS_ADB	0x3346
 #define USB_PID_PICA_3G_RNDIS		0x3347
 
+#define USB_PID_PICA_WIFI_MS_ADB	0x335E
+#define USB_PID_PICA_WIFI_MS		0x335F
+
 #define USB_PID_VG_WIFI_MTP_ADB	0x3348
 #define USB_PID_VG_WIFI_MTP		0x3349
 #define USB_PID_VG_3G_MTP_ADB		0x334A
@@ -299,9 +302,15 @@ static char *usb_functions_rndis[] = { "rndis" };
 static char *usb_functions_rndis_adb[] = { "rndis", "adb" };
 #endif
 #ifdef CONFIG_USB_ANDROID_ACCESSORY
-static char *usb_functions_accessory[] = { "accessory"};
-static char *usb_functions_accessory_adb[] = { "accessory", "adb"};
+static char *usb_functions_accessory[] = { "accessory" };
+static char *usb_functions_accessory_adb[] = { "accessory", "adb" };
 #endif
+
+#ifdef CONFIG_USB_ANDROID_MASS_STORAGE
+static char *usb_functions_ms[] = { "usb_mass_storage" };
+static char *usb_functions_ms_adb[] = { "usb_mass_storage", "adb" };
+#endif
+
 static char *usb_functions_all[] = {
 #ifdef CONFIG_USB_ANDROID_RNDIS
 	"rndis",
@@ -312,6 +321,11 @@ static char *usb_functions_all[] = {
 #ifdef CONFIG_USB_ANDROID_MTP
 	"mtp",
 #endif
+
+#ifdef CONFIG_USB_ANDROID_MASS_STORAGE
+	"usb_mass_storage",
+#endif
+
 	"adb"
 };
 
@@ -352,6 +366,20 @@ static struct android_usb_product usb_products[] = {
 		.functions      = usb_functions_accessory_adb,
 	},
 #endif
+
+#ifdef CONFIG_USB_ANDROID_MASS_STORAGE
+	{
+		.product_id     = USB_PID_PICA_WIFI_MS,
+		.num_functions  = ARRAY_SIZE(usb_functions_ms),
+		.functions      = usb_functions_ms,
+	},
+	{
+		.product_id     = USB_PID_PICA_WIFI_MS_ADB,
+		.num_functions  = ARRAY_SIZE(usb_functions_ms_adb),
+		.functions      = usb_functions_ms_adb,
+	},
+#endif
+
 };
 
 /* standard android USB platform data */
@@ -936,7 +964,6 @@ static int cyttsp_vkey_init(const char *name)
 static int cyttsp_i2c_init(void)
 {
        int ret;
-
 //     ret = cyttsp_vkey_init(CY_I2C_VKEY_NAME);
        ret = gpio_request(CY_I2C_IRQ_GPIO, "CYTTSP I2C IRQ GPIO");
        if (ret) {

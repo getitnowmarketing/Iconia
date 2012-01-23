@@ -166,7 +166,7 @@ else
 		scm=$(scm_version --short)
 		# Fore the res to be "+" to fix the mismatch problem of prebuilt
 		# kernel module
-		res="$res+"
+		res="$res"
 	fi
 fi
 
