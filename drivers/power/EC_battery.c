@@ -546,7 +546,9 @@ static ssize_t SerialNumberwithoutBarcode_show(struct kobject *kobj, struct kobj
 		msleep(10);
 	}
 
-	s += sprintf(s, "%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\n",val8[7],val8[6],val8[9],val8[8],val8[11],val8[10],val8[13],val8[12],val8[15],val8[14],val8[17],val8[16],val8[19],val8[18],val8[21],val8[20],val8[1],val8[0],val8[3],val8[2],val8[5],val8[4]);
+//	s += sprintf(s, "%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\n",val8[7],val8[6],val8[9],val8[8],val8[11],val8[10],val8[13],val8[12],val8[15],val8[14],val8[17],val8[16],val8[19],val8[18],val8[21],val8[20],val8[1],val8[0],val8[3],val8[2],val8[5],val8[4]);
+
+	s += sprintf(s, "%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\n",val8[1],val8[0],val8[3],val8[2],val8[5],val8[4],val8[7],val8[6],val8[9],val8[8],val8[11],val8[10],val8[13],val8[12],val8[15],val8[14],val8[17],val8[16],val8[19],val8[18],val8[21],val8[20]);
 
 	return (s - buf);
 
