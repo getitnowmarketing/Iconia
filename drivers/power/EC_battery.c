@@ -511,6 +511,57 @@ static ssize_t WIFIMAC_store(struct kobject *kobj, struct kobj_attribute *attr, 
 	return n;
 }
 
+static ssize_t IMEIwithBarcode_show(struct kobject *kobj, struct kobj_attribute *attr, char * buf)
+{
+	int i;
+	char * s = buf;
+	u8 val8[6] = {0};
+	u16 val16;
+	s32 val32;
+
+
+	s += sprintf(s, "000000000000000\n");
+
+	return (s - buf);
+
+}
+
+static ssize_t IMEIwithBarcode_store(struct kobject *kobj, struct kobj_attribute *attr, const char * buf, size_t n)
+{
+	return 0;
+}
+
+
+static ssize_t SerialNumberwithoutBarcode_show(struct kobject *kobj, struct kobj_attribute *attr, char * buf)
+{
+	int i;
+	char * s = buf;
+	u8 val8[22] = {0};
+	u16 val16;
+	s32 val32;
+
+	for(i=0;i<=10;i++)
+	{
+		val32 = i2c_smbus_read_word_data_retry(EC_Bat_device->client,0x6a);
+		val16 = val32 & 0x0000ffff;
+		printk("SERIALbyte: %x\n", val16); 
+		TransformToByte(val16, &val8[2*i+1], &val8[2*i]);
+		msleep(10);
+	}
+
+	s += sprintf(s, "%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\n",val8[7],val8[6],val8[9],val8[8],val8[11],val8[10],val8[13],val8[12],val8[15],val8[14],val8[17],val8[16],val8[19],val8[18],val8[21],val8[20],val8[1],val8[0],val8[3],val8[2],val8[5],val8[4]);
+
+	return (s - buf);
+
+}
+
+
+static ssize_t SerialNumberwithoutBarcode_store(struct kobject *kobj, struct kobj_attribute *attr, const char * buf, size_t n)
+{
+	return 0;
+}
+
+
 
 static ssize_t BatStatus_show(struct kobject *kobj, struct kobj_attribute *attr, char * buf)
 {
@@ -1346,6 +1397,8 @@ debug_attr(AutoLSGain);
 debug_attr(GyroGain);
 debug_attr(SystemConfig);
 debug_attr(ECRom);
+debug_attr(IMEIwithBarcode);
+debug_attr(SerialNumberwithoutBarcode);
 #ifdef CONFIG_MACH_ACER_VANGOGH
 debug_attr(HomekeyLED);
 #endif
@@ -1393,6 +1446,8 @@ static struct attribute * g[] = {
 	&GyroGain_attr.attr,
 	&SystemConfig_attr.attr,
 	&ECRom_attr.attr,
+	&IMEIwithBarcode_attr.attr,
+	&SerialNumberwithoutBarcode_attr.attr,
 #ifdef CONFIG_MACH_ACER_VANGOGH
 	&HomekeyLED_attr.attr,
 #endif
