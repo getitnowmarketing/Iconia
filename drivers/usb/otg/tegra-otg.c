@@ -178,12 +178,13 @@ static irqreturn_t tegra_otg_irq(int irq, void *data)
 	spin_lock_irqsave(&tegra->lock, flags);
 
 	val = otg_readl(tegra, USB_PHY_WAKEUP);
-	otg_writel(tegra, val, USB_PHY_WAKEUP);
-
-	if ((val & USB_ID_INT_STATUS) || (val & USB_VBUS_INT_STATUS)) {
-		tegra->int_status = val;
-		tegra->detect_vbus = false;
-		schedule_work(&tegra->work);
+	if (val & (USB_VBUS_INT_EN | USB_ID_INT_EN)) {
+		otg_writel(tegra, val, USB_PHY_WAKEUP);
+		if ((val & USB_ID_INT_STATUS) || (val & USB_VBUS_INT_STATUS)) {
+			tegra->int_status = val;
+			tegra->detect_vbus = false;
+			schedule_work(&tegra->work);
+		}
 	}
 
 	spin_unlock_irqrestore(&tegra->lock, flags);
@@ -212,6 +213,8 @@ static int tegra_otg_set_peripheral(struct otg_transceiver *otg,
 	val |= (USB_VBUS_INT_EN | USB_VBUS_WAKEUP_EN);
 	val |= (USB_ID_INT_EN | USB_ID_PIN_WAKEUP_EN);
 	otg_writel(tegra, val, USB_PHY_WAKEUP);
+	/* Add delay to make sure register is updated */
+        udelay(1);
 	clk_disable(tegra->clk);
 
 	if ((val & USB_ID_STATUS) && (val & USB_VBUS_STATUS)) {
@@ -365,8 +368,9 @@ static int __exit tegra_otg_remove(struct platform_device *pdev)
 }
 
 #ifdef CONFIG_PM
-static int tegra_otg_suspend(struct platform_device *pdev, pm_message_t state)
+static int tegra_otg_suspend(struct device *dev)
 {
+	struct platform_device *pdev = to_platform_device(dev);
 	struct tegra_otg_data *tegra_otg = platform_get_drvdata(pdev);
 	struct otg_transceiver *otg = &tegra_otg->otg;
 	enum usb_otg_state from = otg->state;
@@ -375,21 +379,22 @@ static int tegra_otg_suspend(struct platform_device *pdev, pm_message_t state)
 	tegra_otg->intr_reg_data = readl(tegra_otg->regs + USB_PHY_WAKEUP);
 	clk_disable(tegra_otg->clk);
 
-	if (from == OTG_STATE_A_HOST)
-		tegra_stop_host(tegra_otg);
-	else if (from == OTG_STATE_B_PERIPHERAL && otg->gadget)
+	if (from == OTG_STATE_B_PERIPHERAL && otg->gadget) {
 		usb_gadget_vbus_disconnect(otg->gadget);
 
-	otg->state = OTG_STATE_A_SUSPEND;
+		otg->state = OTG_STATE_A_SUSPEND;
+        }
+
 	return 0;
 }
 
-static int tegra_otg_resume(struct platform_device * pdev)
+static void tegra_otg_resume(struct device *dev)
 {
+	struct platform_device *pdev = to_platform_device(dev);
 	struct tegra_otg_data *tegra_otg = platform_get_drvdata(pdev);
 	int val;
 	unsigned long flags;
-
+	
 	/* Following delay is intentional.
 	 * It is placed here after observing system hang.
 	 * Root cause is not confirmed.
@@ -402,30 +407,35 @@ static int tegra_otg_resume(struct platform_device * pdev)
 	clk_disable(tegra_otg->clk);
 
 	/* A device might be connected while CPU is in sleep mode. In this case no interrupt
-	 * will be triggered
-	 * force irq_work to recheck connected devices
-	 */
-	if (!(val & USB_ID_STATUS)) {
-		spin_lock_irqsave(&tegra_otg->lock, flags);
-		tegra_otg->int_status = (val | USB_ID_INT_STATUS);
-		schedule_work(&tegra_otg->work);
-		spin_unlock_irqrestore(&tegra_otg->lock, flags);
-	}
+        * will be triggered
+        * force irq_work to recheck connected devices
+        */
+       if (!(val & USB_ID_STATUS)) {
+               spin_lock_irqsave(&tegra_otg->lock, flags);
+               tegra_otg->int_status = (val | USB_ID_INT_STATUS );
+               schedule_work(&tegra_otg->work);
+               spin_unlock_irqrestore(&tegra_otg->lock, flags);
+       }
 
-	return 0;
+
+	return;
 }
+
+static const struct dev_pm_ops tegra_otg_pm_ops = {
+	.complete = tegra_otg_resume,
+	.suspend = tegra_otg_suspend,
+};
 #endif
 
 static struct platform_driver tegra_otg_driver = {
 	.driver = {
 		.name  = "tegra-otg",
+#ifdef CONFIG_PM
+		.pm    = &tegra_otg_pm_ops,
+#endif
 	},
 	.remove  = __exit_p(tegra_otg_remove),
 	.probe   = tegra_otg_probe,
-#ifdef CONFIG_PM
-	.suspend = tegra_otg_suspend,
-	.resume = tegra_otg_resume,
-#endif
 };
 
 static int __init tegra_otg_init(void)
