@@ -243,6 +243,8 @@ unsigned long tegra_cpu_lp2_min_residency(void)
 {
 	if (WARN_ON_ONCE(!pdata))
 		return 2000;
+
+	return pdata->cpu_lp2_min_residency;
 }
 
 enum tegra_suspend_mode tegra_get_suspend_mode(void)
