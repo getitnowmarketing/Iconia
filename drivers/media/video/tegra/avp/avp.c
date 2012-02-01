@@ -41,6 +41,7 @@
 #include <mach/io.h>
 #include <mach/iomap.h>
 #include <mach/nvmap.h>
+#include <mach/legacy_irq.h>
 
 #include "../../../../video/tegra/nvmap/nvmap.h"
 
