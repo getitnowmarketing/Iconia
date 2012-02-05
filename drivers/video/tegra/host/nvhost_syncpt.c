@@ -170,8 +170,9 @@ int nvhost_syncpt_wait_timeout(struct nvhost_syncpt *sp, u32 id,
 	if (value)
 		*value = 0;
 
-	BUG_ON(!check_max(sp, id, thresh));
-
+	if (!check_max(sp, id, thresh))
+              return -EINVAL;
+	
 	/* first check cache */
 	if (nvhost_syncpt_min_cmp(sp, id, thresh)) {
 		if (value)
