@@ -75,6 +75,7 @@ static inline void otg_writel(struct tegra_otg_data *tegra, unsigned long val,
 	writel(val, tegra->regs + offset);
 }
 
+/*
 static void tegra_otg_enable_clk(void)
 {
        if (!tegra_clone->clk_enabled)
@@ -88,6 +89,7 @@ static void tegra_otg_disable_clk(void)
                clk_disable(tegra_clone->clk);
        tegra_clone->clk_enabled = false;
 }
+*/
 
 static const char *tegra_state_name(enum usb_otg_state state)
 {
@@ -126,13 +128,13 @@ static void irq_work(struct work_struct *work)
 	enum usb_otg_state to = OTG_STATE_UNDEFINED;
 	unsigned long flags;
 	unsigned long status;
-
+/*
 	if (tegra->detect_vbus) {
 	tegra->detect_vbus = false;
                tegra_otg_enable_clk();
                return;
        }
-
+*/
 	clk_enable(tegra->clk);
 
 	spin_lock_irqsave(&tegra->lock, flags);
@@ -188,7 +190,7 @@ static void irq_work(struct work_struct *work)
 	}
 	clk_disable(tegra->clk);
 
-	tegra_otg_disable_clk();
+//	tegra_otg_disable_clk();
 }
 
 static irqreturn_t tegra_otg_irq(int irq, void *data)
@@ -357,10 +359,11 @@ static int tegra_otg_probe(struct platform_device *pdev)
 	}
 	INIT_WORK (&tegra->work, irq_work);
 
+/*
 #ifndef CONFIG_USB_HOTPLUG
        clk_disable(tegra->clk);
 #endif
-
+*/
 	dev_info(&pdev->dev, "otg transceiver registered\n");
 	return 0;
 
@@ -410,7 +413,7 @@ static int tegra_otg_suspend(struct device *dev)
 
 		otg->state = OTG_STATE_A_SUSPEND;
         }
-	tegra_otg_disable_clk();
+//	tegra_otg_disable_clk();
 	return 0;
 }
 
@@ -421,7 +424,7 @@ static void tegra_otg_resume(struct device *dev)
 	int val;
 	unsigned long flags;
 	
-	tegra_otg_enable_clk();
+//	tegra_otg_enable_clk();
 
 	/* Following delay is intentional.
 	 * It is placed here after observing system hang.
