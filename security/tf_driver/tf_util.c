@@ -17,7 +17,7 @@
  * MA 02111-1307 USA
  */
 #include <linux/mman.h>
-#include "scxlnx_util.h"
+#include "tf_util.h"
 
 /*----------------------------------------------------------------------------
  * Debug printing routines
@@ -283,6 +283,11 @@ void SCXLNXDumpMessage(union SCX_COMMAND_MESSAGE *pMessage)
 			dprintk(
 				KERN_INFO "   nLoginType               = "
 					"SCX_LOGIN_PRIVILEGED\n");
+			break;
+		case SCX_LOGIN_PRIVILEGED_KERNEL:
+			dprintk(
+				KERN_INFO "   nLoginType               = "
+					"SCX_LOGIN_PRIVILEGED_KERNEL\n");
 			break;
 		default:
 			dprintk(
@@ -842,7 +847,7 @@ int SCXLNXConnGetCurrentProcessHash(void *pHash)
 	if (buffer == NULL) {
 		dprintk(
 			KERN_ERR "SCXLNXConnGetCurrentProcessHash:"
-			KERN_ERR " Out of memory for buffer!\n");
+			" Out of memory for buffer!\n");
 		return -ENOMEM;
 	}
 
@@ -1000,7 +1005,7 @@ int SCXLNXConnHashApplicationPathAndData(char *pBuffer, void *pData,
 	}
 	up_read(&(mm->mmap_sem));
 
- end:
+end:
 	if (buffer != NULL)
 		internal_kfree(buffer);
 

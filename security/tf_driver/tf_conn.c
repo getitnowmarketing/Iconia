@@ -28,14 +28,14 @@
 
 #include "s_version.h"
 
-#include "scx_protocol.h"
-#include "scxlnx_defs.h"
-#include "scxlnx_util.h"
-#include "scxlnx_comm.h"
-#include "scxlnx_conn.h"
+#include "tf_protocol.h"
+#include "tf_defs.h"
+#include "tf_util.h"
+#include "tf_comm.h"
+#include "tf_conn.h"
 
 #ifdef CONFIG_TF_ZEBRA
-#include "scx_public_crypto.h"
+#include "tf_crypto.h"
 #endif
 
 /*----------------------------------------------------------------------------
@@ -142,8 +142,6 @@ static int SCXLNXConnMapShmem(
 			goto error;
 		}
 
-		atomic_inc(&(pConn->nShmemAllocated));
-
 		/* no descriptor available, allocate a new one */
 
 		pShmemDesc = (struct SCXLNX_SHMEM_DESC *) internal_kmalloc(
@@ -160,9 +158,11 @@ static int SCXLNXConnMapShmem(
 		pShmemDesc->nType = SCXLNX_SHMEM_TYPE_REGISTERED_SHMEM;
 		atomic_set(&pShmemDesc->nRefCnt, 1);
 		INIT_LIST_HEAD(&(pShmemDesc->list));
+
+		atomic_inc(&(pConn->nShmemAllocated));
 	} else {
 		/* take the first free shared memory descriptor */
-		pShmemDesc = list_entry(pConn->sFreeSharedMemoryList.next,
+		pShmemDesc = list_first_entry(&(pConn->sFreeSharedMemoryList),
 			struct SCXLNX_SHMEM_DESC, list);
 		list_del(&(pShmemDesc->list));
 	}
@@ -305,15 +305,23 @@ static int SCXLNXConnValidateSharedMemoryBlockAndFlags(
 	do {
 		vma = SCXLNXConnFindVma(current->mm, nSharedMemory, nChunk);
 
-		if (vma == NULL)
+		if (vma == NULL) {
+			dprintk(KERN_ERR "%s: area not found\n", __func__);
 			goto error;
+		}
 
 		if (nFlags & SCX_SHMEM_TYPE_READ)
-			if (!(vma->vm_flags & VM_READ))
+			if (!(vma->vm_flags & VM_READ)) {
+				dprintk(KERN_ERR "%s: no read permission\n",
+					__func__);
 				goto error;
+			}
 		if (nFlags & SCX_SHMEM_TYPE_WRITE)
-			if (!(vma->vm_flags & VM_WRITE))
+			if (!(vma->vm_flags & VM_WRITE)) {
+				dprintk(KERN_ERR "%s: no write permission\n",
+					__func__);
 				goto error;
+			}
 
 		nSharedMemorySize -= nChunk;
 		nSharedMemory += nChunk;
@@ -326,8 +334,6 @@ static int SCXLNXConnValidateSharedMemoryBlockAndFlags(
 
 error:
 	up_read(&current->mm->mmap_sem);
-	dprintk(KERN_ERR "SCXLNXConnValidateSharedMemoryBlockAndFlags: "
-		"return error\n");
 	return -EFAULT;
 }
 
@@ -339,6 +345,7 @@ static int SCXLNXConnMapTempShMem(struct SCXLNX_CONNECTION *pConn,
 {
 	u32 nFlags;
 	u32 nError = S_SUCCESS;
+	bool bInUserSpace = pConn->nOwner != SCXLNX_CONNECTION_OWNER_KERNEL;
 
 	dprintk(KERN_INFO "SCXLNXConnMapTempShMem(%p, "
 		"0x%08x[size=0x%08x], offset=0x%08x)\n",
@@ -379,18 +386,20 @@ static int SCXLNXConnMapTempShMem(struct SCXLNX_CONNECTION *pConn,
 		u32 nSharedMemDescriptors[SCX_MAX_COARSE_PAGES];
 		u32 nDescriptorCount;
 
-		nError = SCXLNXConnValidateSharedMemoryBlockAndFlags(
+		if (bInUserSpace) {
+			nError = SCXLNXConnValidateSharedMemoryBlockAndFlags(
 				(void *) pTempMemRef->nDescriptor,
 				pTempMemRef->nSize,
 				nFlags);
-		if (nError != 0)
-			goto error;
+			if (nError != 0)
+				goto error;
+		}
 
 		nError = SCXLNXConnMapShmem(
 				pConn,
 				pTempMemRef->nDescriptor,
 				nFlags,
-				true,
+				bInUserSpace,
 				nSharedMemDescriptors,
 				&(pTempMemRef->nOffset),
 				&(pTempMemRef->nSize),
@@ -413,7 +422,7 @@ static void SCXLNXSharedMemoryCleanupList(
 	while (!list_empty(pList)) {
 		struct SCXLNX_SHMEM_DESC *pShmemDesc;
 
-		pShmemDesc = list_entry(pList->next, struct SCXLNX_SHMEM_DESC,
+		pShmemDesc = list_first_entry(pList, struct SCXLNX_SHMEM_DESC,
 			list);
 
 		SCXLNXConnUnmapShmem(pConn, pShmemDesc, 1);
@@ -626,7 +635,7 @@ error:
 			nError = -EFAULT;
 	}
 
-   return nError;
+	return nError;
 }
 
 /* Check that the current application belongs to the
@@ -887,17 +896,23 @@ int SCXLNXConnOpenClientSession(
 #endif
 
 	case SCX_LOGIN_PRIVILEGED:
-		/*
-		 * Check that calling application either hash EUID=0 or has
-		 * EGID=0
-		 */
-		if (current_euid() != 0 && current_egid() != 0) {
+		/* A privileged login may be performed only on behalf of the
+		   kernel itself or on behalf of a process with euid=0 or
+		   egid=0. */
+		if (pConn->nOwner == SCXLNX_CONNECTION_OWNER_KERNEL) {
+			dprintk(KERN_DEBUG "SCXLNXConnOpenClientSession: "
+				"SCX_LOGIN_PRIVILEGED for kernel API\n");
+		} else if (current_euid() != 0 && current_egid() != 0) {
 			dprintk(KERN_ERR "SCXLNXConnOpenClientSession: "
 				" user %d, group %d not allowed to open "
 				"session with SCX_LOGIN_PRIVILEGED\n",
 				current_euid(), current_egid());
 			nError = -EACCES;
 			goto error;
+		} else {
+			dprintk(KERN_DEBUG "SCXLNXConnOpenClientSession: "
+				"SCX_LOGIN_PRIVILEGED for %u:%u\n",
+				current_euid(), current_egid());
 		}
 		pMessage->sOpenClientSessionMessage.nLoginType =
 			SCX_LOGIN_PRIVILEGED;
@@ -925,6 +940,26 @@ int SCXLNXConnOpenClientSession(
 		pMessage->sOpenClientSessionMessage.nMessageSize += 5;
 		break;
 	}
+
+	case SCX_LOGIN_PRIVILEGED_KERNEL:
+		/* A kernel login may be performed only on behalf of the
+		   kernel itself. */
+		if (pConn->nOwner == SCXLNX_CONNECTION_OWNER_KERNEL) {
+			dprintk(KERN_DEBUG "SCXLNXConnOpenClientSession: "
+				"SCX_LOGIN_PRIVILEGED_KERNEL for kernel API\n");
+			pMessage->sOpenClientSessionMessage.nLoginType =
+				SCX_LOGIN_PRIVILEGED_KERNEL;
+		} else {
+			dprintk(KERN_ERR "SCXLNXConnOpenClientSession: "
+				" user %d, group %d not allowed to open "
+				"session with SCX_LOGIN_PRIVILEGED_KERNEL\n",
+				current_euid(), current_egid());
+			nError = -EACCES;
+			goto error;
+		}
+		pMessage->sOpenClientSessionMessage.nLoginType =
+			SCX_LOGIN_PRIVILEGED_KERNEL;
+		break;
 
 	default:
 		 dprintk(KERN_ERR "SCXLNXConnOpenClientSession: "
@@ -1033,48 +1068,45 @@ int SCXLNXConnRegisterSharedMemory(
 {
 	int nError = 0;
 	struct SCXLNX_SHMEM_DESC *pShmemDesc = NULL;
+	bool bInUserSpace = pConn->nOwner != SCXLNX_CONNECTION_OWNER_KERNEL;
+	struct SCX_COMMAND_REGISTER_SHARED_MEMORY *msg =
+		&pMessage->sRegisterSharedMemoryMessage;
 
 	dprintk(KERN_INFO "SCXLNXConnRegisterSharedMemory(%p) "
 		"%p[0x%08X][0x%08x]\n",
 		pConn,
-		(void *) pMessage->sRegisterSharedMemoryMessage.
-			nSharedMemDescriptors[0],
-		pMessage->sRegisterSharedMemoryMessage.nSharedMemSize,
-		(u32)pMessage->sRegisterSharedMemoryMessage.nMemoryFlags);
+		(void *)msg->nSharedMemDescriptors[0],
+		msg->nSharedMemSize,
+		(u32)msg->nMemoryFlags);
 
-	nError = SCXLNXConnValidateSharedMemoryBlockAndFlags(
-		(void *) pMessage->sRegisterSharedMemoryMessage.
-			nSharedMemDescriptors[0],
-		pMessage->sRegisterSharedMemoryMessage.nSharedMemSize,
-		(u32)pMessage->sRegisterSharedMemoryMessage.nMemoryFlags);
-	if (nError != 0)
-		goto error;
+	if (bInUserSpace) {
+		nError = SCXLNXConnValidateSharedMemoryBlockAndFlags(
+			(void *)msg->nSharedMemDescriptors[0],
+			msg->nSharedMemSize,
+			(u32)msg->nMemoryFlags);
+		if (nError != 0)
+			goto error;
+	}
 
 	/* Initialize nMessageSize with no descriptors */
-	pMessage->sRegisterSharedMemoryMessage.nMessageSize
+	msg->nMessageSize
 		= (sizeof(struct SCX_COMMAND_REGISTER_SHARED_MEMORY) -
 			sizeof(struct SCX_COMMAND_HEADER)) / 4;
 
 	/* Map the shmem block and update the message */
-	if (pMessage->sRegisterSharedMemoryMessage.nSharedMemSize == 0) {
+	if (msg->nSharedMemSize == 0) {
 		/* Empty shared mem */
-		pMessage->sRegisterSharedMemoryMessage.nSharedMemStartOffset =
-			pMessage->sRegisterSharedMemoryMessage.
-				nSharedMemDescriptors[0];
+		msg->nSharedMemStartOffset = msg->nSharedMemDescriptors[0];
 	} else {
 		u32 nDescriptorCount;
 		nError = SCXLNXConnMapShmem(
 			pConn,
-			pMessage->sRegisterSharedMemoryMessage.
-				nSharedMemDescriptors[0],
-			pMessage->sRegisterSharedMemoryMessage.nMemoryFlags,
-			true,
-			pMessage->sRegisterSharedMemoryMessage.
-				nSharedMemDescriptors,
-			&(pMessage->sRegisterSharedMemoryMessage.
-				nSharedMemStartOffset),
-			&(pMessage->sRegisterSharedMemoryMessage.
-				nSharedMemSize),
+			msg->nSharedMemDescriptors[0],
+			msg->nMemoryFlags,
+			bInUserSpace,
+			msg->nSharedMemDescriptors,
+			&(msg->nSharedMemStartOffset),
+			&(msg->nSharedMemSize),
 			&pShmemDesc,
 			&nDescriptorCount);
 		if (nError != 0) {
@@ -1082,17 +1114,15 @@ int SCXLNXConnRegisterSharedMemory(
 				"unable to map shared memory block\n");
 			goto error;
 		}
-		pMessage->sRegisterSharedMemoryMessage.nMessageSize +=
-			nDescriptorCount;
+		msg->nMessageSize += nDescriptorCount;
 	}
 
 	/*
 	 * write the correct device context handle and the address of the shared
 	 * memory descriptor in the message
 	 */
-	pMessage->sRegisterSharedMemoryMessage.hDeviceContext =
-		 pConn->hDeviceContext;
-	pMessage->sRegisterSharedMemoryMessage.nBlockID = (u32) pShmemDesc;
+	msg->hDeviceContext = pConn->hDeviceContext;
+	msg->nBlockID = (u32)pShmemDesc;
 
 	/* Send the updated message */
 	nError = SCXLNXCommSendReceive(
@@ -1118,7 +1148,7 @@ int SCXLNXConnRegisterSharedMemory(
 	/* successful completion */
 	dprintk(KERN_INFO "SCXLNXConnRegisterSharedMemory(%p):"
 		" nBlockID=0x%08x hBlock=0x%08x\n",
-		pConn, pMessage->sRegisterSharedMemoryMessage.nBlockID,
+		pConn, msg->nBlockID,
 		pAnswer->sRegisterSharedMemoryAnswer.hBlock);
 	return 0;
 
@@ -1390,7 +1420,7 @@ error:
 			nError = -EFAULT;
 	}
 
-   return nError;
+	return nError;
 }
 
 
@@ -1431,11 +1461,11 @@ int SCXLNXConnOpen(struct SCXLNX_DEVICE *pDevice,
 
 	memset(pConn, 0, sizeof(*pConn));
 
-	INIT_LIST_HEAD(&(pConn->list));
 	pConn->nState = SCXLNX_CONN_STATE_NO_DEVICE_CONTEXT;
 	pConn->pDevice = pDevice;
 	spin_lock_init(&(pConn->stateLock));
 	atomic_set(&(pConn->nPendingOpCounter), 0);
+	INIT_LIST_HEAD(&(pConn->list));
 
 	/*
 	 * Initialize the shared memory
@@ -1450,6 +1480,13 @@ int SCXLNXConnOpen(struct SCXLNX_DEVICE *pDevice,
 	 */
 	SCXPublicCryptoInitDeviceContext(pConn);
 #endif
+
+	/*
+	 * Attach the connection to the device.
+	 */
+	spin_lock(&(pDevice->connsLock));
+	list_add(&(pConn->list), &(pDevice->conns));
+	spin_unlock(&(pDevice->connsLock));
 
 	/*
 	 * Successful completion.
@@ -1518,6 +1555,10 @@ void SCXLNXConnClose(struct SCXLNX_CONNECTION *pConn)
 	 * Clean up the shared memory
 	 */
 	SCXLNXConnCleanupSharedMemory(pConn);
+
+	spin_lock(&(pConn->pDevice->connsLock));
+	list_del(&(pConn->list));
+	spin_unlock(&(pConn->pDevice->connsLock));
 
 	internal_kfree(pConn);
 

@@ -95,6 +95,7 @@ enum dhd_bus_wake_state {
 	WAKE_LOCK_SOFTAP_STOP,
 	WAKE_LOCK_SOFTAP_START,
 	WAKE_LOCK_SOFTAP_THREAD,
+	WAKE_LOCK_PROTECT,
 	WAKE_LOCK_MAX
 };
 enum dhd_prealloc_index {
@@ -377,6 +378,7 @@ typedef enum cust_gpio_modes {
 extern int wl_iw_iscan_set_scan_broadcast_prep(struct net_device *dev, uint flag);
 extern int wl_iw_send_priv_event(struct net_device *dev, char *flag);
 extern int net_os_send_hang_message(struct net_device *dev);
+extern void net_os_clear_hang_message(struct net_device *dev);
 
 /*
  * Insmod parameters for debug/test

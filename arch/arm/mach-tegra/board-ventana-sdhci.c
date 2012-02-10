@@ -34,6 +34,10 @@
 #define VENTANA_WLAN_PWR	TEGRA_GPIO_PK5
 #define VENTANA_WLAN_RST	TEGRA_GPIO_PK6
 #define VENTANA_WLAN_IRQ	TEGRA_GPIO_PS0
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+#define VENTANA_BT_RST		TEGRA_GPIO_PU0
+#define VENTANA_BCM_VDD	TEGRA_GPIO_PD1
+#endif
 
 static void (*wifi_status_cb)(int card_present, void *dev_id);
 static void *wifi_status_cb_devid;
@@ -134,7 +138,7 @@ static struct tegra_sdhci_platform_data tegra_sdhci_platform_data0 = {
 	.power_gpio = -1,
 };
 
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
 static struct tegra_sdhci_platform_data tegra_sdhci_platform_data2 = {
 	.clk_id = NULL,
 	.force_hs = 1,
@@ -220,6 +224,51 @@ static int ventana_wifi_set_carddetect(int val)
 	return 0;
 }
 
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+static int wifi_sdio_gpio[] = {
+	TEGRA_GPIO_PZ0,
+	TEGRA_GPIO_PZ1,
+	TEGRA_GPIO_PY7,
+	TEGRA_GPIO_PY6,
+	TEGRA_GPIO_PY5,
+	TEGRA_GPIO_PY4,
+};
+
+static int enable_wifi_sdio_func(void)
+{
+	int i = 0;
+
+	for (i = 0; i < ARRAY_SIZE(wifi_sdio_gpio); i++) {
+		tegra_gpio_disable(wifi_sdio_gpio[i]);
+		gpio_free(wifi_sdio_gpio[i]);
+	}
+	return 0;
+}
+
+static int disable_wifi_sdio_func(void)
+{
+	unsigned int rc = 0;
+	int i = 0;
+
+	for (i = 0; i < ARRAY_SIZE(wifi_sdio_gpio); i++) {
+		rc = gpio_request(wifi_sdio_gpio[i], NULL);
+		if (rc) {
+			printk(KERN_INFO "%s, request gpio %d failed !!!\n", __func__, wifi_sdio_gpio[i]);
+			return rc;
+		}
+
+		tegra_gpio_enable(wifi_sdio_gpio[i]);
+
+		rc = gpio_direction_output(wifi_sdio_gpio[i], 0);
+		if (rc) {
+			printk(KERN_INFO "%s, direction gpio %d failed !!!\n", __func__, wifi_sdio_gpio[i]);
+			return rc;
+		}
+	}
+	return 0;
+}
+#endif
+
 static int ventana_wifi_power(int on)
 {
 	pr_debug("%s: %d\n", __func__, on);
@@ -228,6 +277,18 @@ static int ventana_wifi_power(int on)
 		gpio_direction_input(VENTANA_WLAN_IRQ);
 	else
 		gpio_direction_output(VENTANA_WLAN_IRQ, 0);
+
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+	/* Set VDD high at first before turning on*/
+	if (on) {
+		enable_wifi_sdio_func();
+		if (!gpio_get_value(VENTANA_BCM_VDD)) {
+			gpio_set_value(VENTANA_BCM_VDD, 1);
+			pr_err("%s: VDD=1\n", __func__);
+		}
+	}
+#endif
+
 	mdelay(50);
 	gpio_set_value(VENTANA_WLAN_RST, on);
 	mdelay(80);
@@ -237,6 +298,19 @@ static int ventana_wifi_power(int on)
 	else
 		clk_disable(wifi_32k_clk);
 
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+	/*
+	 * When BT and Wi-Fi turn off at the same time, the last one must do the VDD off action.
+	 * So BT/WI-FI must check the other's status in order to set VDD low at last.
+	 */
+	if (!on) {
+		if (!gpio_get_value(VENTANA_BT_RST)) {
+			gpio_set_value(VENTANA_BCM_VDD, 0);
+			pr_err("%s: VDD=0\n", __func__);
+		}
+		disable_wifi_sdio_func();
+	}
+#endif
 	return 0;
 }
 
@@ -270,16 +344,24 @@ static int __init ventana_wifi_init(void)
 	gpio_direction_output(VENTANA_WLAN_PWR, 0);
 	gpio_direction_output(VENTANA_WLAN_RST, 0);
 
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+	gpio_request(VENTANA_BCM_VDD, "bcm_vdd");
+	tegra_gpio_enable(VENTANA_BCM_VDD);
+	gpio_direction_output(VENTANA_BCM_VDD, 0);
+#endif
 	platform_device_register(&ventana_wifi_device);
 
 	device_init_wakeup(&ventana_wifi_device.dev, 1);
 	device_set_wakeup_enable(&ventana_wifi_device.dev, 0);
 
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+	disable_wifi_sdio_func();
+#endif
 	return 0;
 }
 int __init ventana_sdhci_init(void)
 {
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
 	gpio_request(tegra_sdhci_platform_data2.power_gpio, "sdhci2_power");
 	gpio_request(tegra_sdhci_platform_data2.cd_gpio, "sdhci2_cd");
 
@@ -287,7 +369,6 @@ int __init ventana_sdhci_init(void)
 	tegra_gpio_enable(tegra_sdhci_platform_data2.cd_gpio);
 
 	gpio_direction_output(tegra_sdhci_platform_data2.power_gpio, 1);
-	gpio_set_value(tegra_sdhci_platform_data2.power_gpio, 1);
 #else
 	gpio_request(tegra_sdhci_platform_data2.power_gpio, "sdhci2_power");
 	gpio_request(tegra_sdhci_platform_data2.cd_gpio, "sdhci2_cd");

@@ -375,6 +375,88 @@ static int tegra_shutdown_mode_get(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
+static int tegra_video_call_mode_info(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_info *uinfo)
+{
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->count = 1;
+	uinfo->value.integer.min = 0;
+	uinfo->value.integer.max = 1;
+	return 0;
+}
+
+static int tegra_video_call_mode_put(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct tegra_audio_data* audio_data = snd_kcontrol_chip(kcontrol);
+	int codec_con = audio_data->codec_con;
+	audio_data->is_video_call_mode = ucontrol->value.integer.value[0];
+
+	if (audio_data->is_video_call_mode) {
+		codec_con |= TEGRA_VOIP_CALL;
+	} else {
+		codec_con &= ~TEGRA_VOIP_CALL;
+	}
+
+	pr_err("set video call mode: %d", audio_data->is_video_call_mode);
+
+	tegra_ext_control(audio_data->codec, codec_con);
+
+	return 1;
+}
+
+static int tegra_video_call_mode_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct tegra_audio_data* audio_data = snd_kcontrol_chip(kcontrol);
+	ucontrol->value.integer.value[0] = audio_data->is_video_call_mode;
+
+	pr_err("get video call mode: %d", audio_data->is_video_call_mode);
+
+	return 1;
+}
+
+static int tegra_speech_mode_info(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_info *uinfo)
+{
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_BOOLEAN;
+	uinfo->count = 1;
+	uinfo->value.integer.min = 0;
+	uinfo->value.integer.max = 1;
+	return 0;
+}
+
+static int tegra_speech_mode_put(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct tegra_audio_data* audio_data = snd_kcontrol_chip(kcontrol);
+	int codec_con = audio_data->codec_con;
+	audio_data->is_speech_mode = ucontrol->value.integer.value[0];
+
+	if (audio_data->is_speech_mode) {
+		codec_con |= TEGRA_SPEECH_MODE;
+	} else {
+		codec_con &= ~TEGRA_SPEECH_MODE;
+	}
+
+	pr_err("set speech mode: %d", audio_data->is_speech_mode);
+
+	tegra_ext_control(audio_data->codec, codec_con);
+
+	return 1;
+}
+
+static int tegra_speech_mode_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct tegra_audio_data* audio_data = snd_kcontrol_chip(kcontrol);
+	ucontrol->value.integer.value[0] = audio_data->is_speech_mode;
+
+	pr_err("get speech mode: %d", audio_data->is_speech_mode);
+
+	return 1;
+}
+
 struct snd_kcontrol_new tegra_mic_mode_control = {
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
@@ -393,6 +475,26 @@ struct snd_kcontrol_new tegra_shutdown_mode_control = {
 	.info = tegra_shutdown_mode_info,
 	.get = tegra_shutdown_mode_get,
 	.put = tegra_shutdown_mode_put
+};
+
+struct snd_kcontrol_new tegra_video_call_mode_control = {
+	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
+	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+	.name = "Video Call Mode Switch",
+	.private_value = 0xffff,
+	.info = tegra_video_call_mode_info,
+	.get = tegra_video_call_mode_get,
+	.put = tegra_video_call_mode_put
+};
+
+struct snd_kcontrol_new tegra_speech_mode_control = {
+	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
+	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+	.name = "Automatic Speech Recognition Mode Switch",
+	.private_value = 0xffff,
+	.info = tegra_speech_mode_info,
+	.get = tegra_speech_mode_get,
+	.put = tegra_speech_mode_put
 };
 #endif
 
@@ -437,6 +539,18 @@ int tegra_controls_init(struct snd_soc_codec *codec)
                 snd_ctl_new1(&tegra_ringtone_mode_control, audio_data));
         if (err < 0)
                 return err;
+
+	/* Add video call mode switch control */
+	err = snd_ctl_add(codec->card,
+		snd_ctl_new1(&tegra_video_call_mode_control, audio_data));
+	if (err < 0)
+		return err;
+
+	/* Add automatic speech recognition mode switch control */
+	err = snd_ctl_add(codec->card,
+		snd_ctl_new1(&tegra_speech_mode_control, audio_data));
+	if (err < 0)
+		return err;
 #endif
 
 	return 0;

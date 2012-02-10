@@ -71,6 +71,8 @@
 #include <../../../drivers/staging/android/timed_gpio.h>
 #endif
 
+const char *gw_str = "gateway";
+const char *pb_str = "packardbell";
 #ifdef CONFIG_MACH_ACER_VANGOGH
 extern void empty_gpio_init(void);
 #endif
@@ -160,6 +162,20 @@ static struct resource ventana_bcm4329_rfkill_resources[] = {
 		.end    = TEGRA_GPIO_PU0,
 		.flags  = IORESOURCE_IO,
 	},
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+	{
+		.name   = "bcm4329_wifi_reset_gpio",
+		.start  = TEGRA_GPIO_PK6,
+		.end    = TEGRA_GPIO_PK6,
+		.flags  = IORESOURCE_IO,
+	},
+	{
+		.name   = "bcm4329_vdd_gpio",
+		.start  = TEGRA_GPIO_PD1,
+		.end    = TEGRA_GPIO_PD1,
+		.flags  = IORESOURCE_IO,
+	},
+#endif
 };
 
 static struct platform_device ventana_bcm4329_rfkill_device = {
@@ -257,6 +273,10 @@ static __initdata struct tegra_clk_init_table ventana_clk_init_table[] = {
 	{ "audio_2x",	"audio",	22579200,	false},
 	{ "spdif_out",	"pll_a_out0",	5644800,	false},
 	{ "kbc",	"clk_32k",	32768,		true},
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)\
+	|| defined(CONFIG_MACH_ACER_PICASSO_E)
+	{ "vde",	"pll_m",	240000000,	false},
+#endif
 	{ NULL,		NULL,		0,		0},
 };
 
@@ -267,6 +287,8 @@ static __initdata struct tegra_clk_init_table ventana_clk_init_table[] = {
 #define USB_PRODUCT_NAME_VG_WIFI	"ACER Iconia Tab A100"
 #define USB_PRODUCT_NAME_VG_3G		"ACER Iconia Tab A101"
 
+#define USB_PRODUCT_NAME_PICAE_WIFI	"ACER Iconia Tab A200"
+
 #define USB_PID_PICA_WIFI_MTP_ADB	0x3325
 #define USB_PID_PICA_WIFI_MTP		0x3341
 #define USB_PID_PICA_3G_MTP_ADB	0x3344
@@ -274,12 +296,36 @@ static __initdata struct tegra_clk_init_table ventana_clk_init_table[] = {
 #define USB_PID_PICA_3G_RNDIS_ADB	0x3346
 #define USB_PID_PICA_3G_RNDIS		0x3347
 
+#define USB_PID_PICAE_WIFI_MTP_ADB	0x337C
+#define USB_PID_PICAE_WIFI_MTP		0x337D
+
 #define USB_PID_VG_WIFI_MTP_ADB	0x3348
 #define USB_PID_VG_WIFI_MTP		0x3349
 #define USB_PID_VG_3G_MTP_ADB		0x334A
 #define USB_PID_VG_3G_MTP		0x334B
 #define USB_PID_VG_3G_RNDIS_ADB	0x334C
 #define USB_PID_VG_3G_RNDIS		0x334D
+
+#define USB_MANUFACTURER_NAME_GW	"Gateway"
+#define USB_MANUFACTURER_NAME_PB	"Packard Bell"
+#define USB_PRODUCT_NAME_PB_WIFI	"Packard Bell Liberty Tab G100W"
+#define USB_PRODUCT_NAME_PB_3G		"Packard Bell Liberty Tab G100G"
+#define USB_PRODUCT_NAME_GW_WIFI	"Gateway Tab TP-A60W"
+#define USB_PRODUCT_NAME_GW_3G		"Gateway Tab TP-A60G"
+
+#define USB_PID_GW_WIFI_MTP_ADB	0x3355
+#define USB_PID_GW_WIFI_MTP		0x3356
+#define USB_PID_GW_3G_MTP_ADB		0x3357
+#define USB_PID_GW_3G_MTP		0x3358
+#define USB_PID_GW_3G_RNDIS_ADB	0x3359
+#define USB_PID_GW_3G_RNDIS		0x335A
+
+#define USB_PID_PB_WIFI_MTP_ADB	0x335B
+#define USB_PID_PB_WIFI_MTP		0x335C
+#define USB_PID_PB_3G_MTP_ADB		0x335D
+#define USB_PID_PB_3G_MTP		0x335E
+#define USB_PID_PB_3G_RNDIS_ADB	0x335F
+#define USB_PID_PB_3G_RNDIS		0x3360
 
 #define USB_PID_PICA_WIFI_ACC_ADB	USB_ACCESSORY_ADB_PRODUCT_ID
 #define USB_PID_PICA_WIFI_ACC		USB_ACCESSORY_PRODUCT_ID
@@ -397,8 +443,13 @@ static struct wm8903_platform_data wm8903_pdata = {
 	.micdet_delay = 0,
 	.gpio_base = WM8903_GPIO_BASE,
 	.gpio_cfg = {
+#if defined(MACH_ACER_AUDIO)
+		WM8903_GPn_FN_GPIO_OUTPUT,
+		WM8903_GPn_FN_GPIO_OUTPUT,
+#else
 		WM8903_GPIO_NO_CONFIG,
 		WM8903_GPIO_NO_CONFIG,
+#endif
 		0,                     /* as output pin */
 		WM8903_GPn_FN_GPIO_MICBIAS_CURRENT_DETECT
 		<< WM8903_GP4_FN_SHIFT, /* as micbias current detect */
@@ -658,9 +709,13 @@ static int ventana_wakeup_key(void)
 {
 	unsigned long status =
 		readl(IO_ADDRESS(TEGRA_PMC_BASE) + PMC_WAKE_STATUS);
+	int clr_key_pwr = 0x100;
 
 #if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || \
     defined(CONFIG_MACH_ACER_VANGOGH)
+
+	writel(clr_key_pwr, IO_ADDRESS(TEGRA_PMC_BASE) + PMC_WAKE_STATUS);
+
 	return status & TEGRA_WAKE_GPIO_PC7 ? KEY_POWER : KEY_RESERVED;
 #else
 	return status & TEGRA_WAKE_GPIO_PV2 ? KEY_POWER : KEY_RESERVED;
@@ -1032,7 +1087,18 @@ static int __init ventana_touch_init_panjit(void)
 }
 #endif
 
-#ifdef CONFIG_TOUCHSCREEN_ATMEL_MT_T9
+#if defined(CONFIG_TOUCHSCREEN_ATMEL_768E)
+/* Atmel MaxTouch touchscreen              Driver data */
+
+static struct i2c_board_info __initdata i2c_info[] = {
+	{
+		I2C_BOARD_INFO("maXTouch", 0X4D),
+		.irq = TEGRA_GPIO_TO_IRQ(TEGRA_GPIO_PV6),
+	},
+};
+#endif
+
+#if defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9)
 /* Atmel MaxTouch touchscreen              Driver data */
 
 static struct i2c_board_info __initdata i2c_info[] = {
@@ -1041,7 +1107,10 @@ static struct i2c_board_info __initdata i2c_info[] = {
 		.irq = TEGRA_GPIO_TO_IRQ(TEGRA_GPIO_PV6),
 	},
 };
+#endif
 
+#if defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9) || \
+	defined(CONFIG_TOUCHSCREEN_ATMEL_768E)
 static int __init ventana_touch_init_atmel(void)
 {
 	int ret;
@@ -1296,6 +1365,12 @@ static void ventana_usb_init(void)
 		/* XOR the USB serial across the remaining bytes */
 		rndis_pdata.ethaddr[i % (ETH_ALEN - 1) + 1] ^= *src++;
 	}
+#if defined(CONFIG_MACH_ACER_MAYA)
+	if (strncmp(acer_brand, gw_str, strlen(gw_str)) == 0)
+		rndis_pdata.vendorDescr = kstrdup(USB_MANUFACTURER_NAME_GW, GFP_KERNEL);
+	else if (strncmp(acer_brand, pb_str, strlen(pb_str)) == 0)
+		rndis_pdata.vendorDescr = kstrdup(USB_MANUFACTURER_NAME_PB, GFP_KERNEL);
+#endif
 	platform_device_register(&rndis_device);
 #endif
 }
@@ -1340,7 +1415,8 @@ int get_sku_id(){
 static void __init tegra_ventana_init(void)
 {
 #if defined(CONFIG_TOUCHSCREEN_PANJIT_I2C) || \
-	defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9)
+	defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9)|| \
+	defined(CONFIG_TOUCHSCREEN_ATMEL_768E)
 	struct board_info BoardInfo;
 #endif
 
@@ -1365,7 +1441,7 @@ static void __init tegra_ventana_init(void)
 	tegra_das_device.dev.platform_data = &tegra_das_pdata;
 	tegra_ehci2_device.dev.platform_data
 		= &ventana_ehci2_ulpi_platform_data;
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
+#if defined(CONFIG_MACH_ACER_PICASSO)
 	if(get_sku_id() != 5){
 		andusb_plat.product_id = USB_PID_PICA_3G_MTP_ADB;
 		andusb_plat.products[0].product_id = USB_PID_PICA_3G_MTP;
@@ -1377,6 +1453,39 @@ static void __init tegra_ventana_init(void)
 		andusb_plat.products[5].product_id = USB_PID_PICA_3G_ACC_ADB;
 #endif
 		andusb_plat.product_name = kstrdup(USB_PRODUCT_NAME_PICA_3G, GFP_KERNEL);
+	}
+#elif defined(CONFIG_MACH_ACER_MAYA)
+	g_sku_id = get_sku_id();
+	if (strncmp(acer_brand, gw_str, strlen(gw_str)) == 0) {
+		if(g_sku_id == 0){
+			andusb_plat.product_id = USB_PID_GW_WIFI_MTP_ADB;
+			andusb_plat.products[0].product_id = USB_PID_GW_WIFI_MTP;
+			andusb_plat.products[1].product_id = USB_PID_GW_WIFI_MTP_ADB;
+			andusb_plat.product_name = kstrdup(USB_PRODUCT_NAME_GW_WIFI, GFP_KERNEL);
+		} else {
+			andusb_plat.product_id = USB_PID_GW_3G_MTP_ADB;
+			andusb_plat.products[0].product_id = USB_PID_GW_3G_MTP;
+			andusb_plat.products[1].product_id = USB_PID_GW_3G_MTP_ADB;
+			andusb_plat.products[2].product_id = USB_PID_GW_3G_RNDIS;
+			andusb_plat.products[3].product_id = USB_PID_GW_3G_RNDIS_ADB;
+			andusb_plat.product_name = kstrdup(USB_PRODUCT_NAME_GW_3G, GFP_KERNEL);
+		}
+		andusb_plat.manufacturer_name = kstrdup(USB_MANUFACTURER_NAME_GW, GFP_KERNEL);
+	} else if (strncmp(acer_brand, pb_str, strlen(pb_str)) == 0) {
+		if (g_sku_id == 0) {
+			andusb_plat.product_id = USB_PID_PB_WIFI_MTP_ADB;
+			andusb_plat.products[0].product_id = USB_PID_PB_WIFI_MTP;
+			andusb_plat.products[1].product_id = USB_PID_PB_WIFI_MTP_ADB;
+			andusb_plat.product_name = kstrdup(USB_PRODUCT_NAME_PB_WIFI, GFP_KERNEL);
+		} else {
+			andusb_plat.product_id = USB_PID_PB_3G_MTP_ADB;
+			andusb_plat.products[0].product_id = USB_PID_PB_3G_MTP;
+			andusb_plat.products[1].product_id = USB_PID_PB_3G_MTP_ADB;
+			andusb_plat.products[2].product_id = USB_PID_PB_3G_RNDIS;
+			andusb_plat.products[3].product_id = USB_PID_PB_3G_RNDIS_ADB;
+			andusb_plat.product_name = kstrdup(USB_PRODUCT_NAME_PB_3G, GFP_KERNEL);
+		}
+		andusb_plat.manufacturer_name = kstrdup(USB_MANUFACTURER_NAME_PB, GFP_KERNEL);
 	}
 #elif defined(CONFIG_MACH_ACER_VANGOGH)
 	if(get_sku_id() == 0){
@@ -1401,6 +1510,12 @@ static void __init tegra_ventana_init(void)
 		andusb_plat.product_name = kstrdup(USB_PRODUCT_NAME_VG_3G, GFP_KERNEL);
 	}
 #endif
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+		andusb_plat.product_id = USB_PID_PICAE_WIFI_MTP_ADB;
+		andusb_plat.products[0].product_id = USB_PID_PICAE_WIFI_MTP;
+		andusb_plat.products[1].product_id = USB_PID_PICAE_WIFI_MTP_ADB;
+		andusb_plat.product_name = kstrdup(USB_PRODUCT_NAME_PICAE_WIFI, GFP_KERNEL);
+#endif
 	platform_add_devices(ventana_devices, ARRAY_SIZE(ventana_devices));
 
 #ifdef CONFIG_DOCK
@@ -1416,7 +1531,8 @@ static void __init tegra_ventana_init(void)
 	ventana_regulator_init();
 
 #if defined(CONFIG_TOUCHSCREEN_PANJIT_I2C) || \
-	defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9)
+	defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9) || \
+	defined(CONFIG_TOUCHSCREEN_ATMEL_768E)
 
 	tegra_get_board_info(&BoardInfo);
 
@@ -1522,6 +1638,7 @@ void __init tegra_ventana_reserve(void)
  * TO-DO: This should be fixed if bootloader can pass correct
  *        machine id to kernel.
  */
+#if defined(CONFIG_MACH_ACER_PICASSO)
 MACHINE_START(VENTANA, "picasso")
 	.boot_params    = 0x00000100,
 	.phys_io        = IO_APB_PHYS,
@@ -1543,6 +1660,19 @@ MACHINE_START(PICASSO, "picasso")
 	.reserve        = tegra_ventana_reserve,
 	.timer          = &tegra_timer,
 MACHINE_END
+#endif
+
+#if defined(CONFIG_MACH_ACER_MAYA)
+MACHINE_START(VENTANA, "maya")
+	.boot_params    = 0x00000100,
+	.phys_io        = IO_APB_PHYS,
+	.io_pg_offst    = ((IO_APB_VIRT) >> 18) & 0xfffc,
+	.init_irq       = tegra_init_irq,
+	.init_machine   = tegra_ventana_init,
+	.map_io         = tegra_map_common_io,
+	.reserve        = tegra_ventana_reserve,
+	.timer          = &tegra_timer,
+MACHINE_END
 
 MACHINE_START(MAYA, "maya")
 	.boot_params    = 0x00000100,
@@ -1554,8 +1684,31 @@ MACHINE_START(MAYA, "maya")
 	.reserve        = tegra_ventana_reserve,
 	.timer          = &tegra_timer,
 MACHINE_END
+#endif
 
 MACHINE_START(VANGOGH, "vangogh")
+	.boot_params    = 0x00000100,
+	.phys_io        = IO_APB_PHYS,
+	.io_pg_offst    = ((IO_APB_VIRT) >> 18) & 0xfffc,
+	.init_irq       = tegra_init_irq,
+	.init_machine   = tegra_ventana_init,
+	.map_io         = tegra_map_common_io,
+	.reserve        = tegra_ventana_reserve,
+	.timer          = &tegra_timer,
+MACHINE_END
+
+MACHINE_START(PICASSO_E, "picasso_e")
+	.boot_params    = 0x00000100,
+	.phys_io        = IO_APB_PHYS,
+	.io_pg_offst    = ((IO_APB_VIRT) >> 18) & 0xfffc,
+	.init_irq       = tegra_init_irq,
+	.init_machine   = tegra_ventana_init,
+	.map_io         = tegra_map_common_io,
+	.reserve        = tegra_ventana_reserve,
+	.timer          = &tegra_timer,
+MACHINE_END
+
+MACHINE_START(VANGOGH2, "vangogh2")
 	.boot_params    = 0x00000100,
 	.phys_io        = IO_APB_PHYS,
 	.io_pg_offst    = ((IO_APB_VIRT) >> 18) & 0xfffc,

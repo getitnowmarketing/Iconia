@@ -52,6 +52,16 @@ config MACH_ACER_VANGOGH
        help
          Support for Acer Vangogh
 
+config MACH_ACER_PICASSO_E
+       bool "Acer Picasso E"
+       help
+         Support for Acer Picasso E
+
+config MACH_ACER_VANGOGH2
+       bool "Acer Vangogh2"
+       help
+         Support for Acer Vangogh2
+
 choice
         prompt "Low-level debug console UART"
         default TEGRA_DEBUG_UART_NONE

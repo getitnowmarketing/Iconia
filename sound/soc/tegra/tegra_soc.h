@@ -90,9 +90,48 @@
 #define TEGRA_LINEIN		0x40
 #define TEGRA_HEADSET_OUT	0x80
 #define TEGRA_HEADSET_IN	0x100
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
 #define TEGRA_MIC_MUTE		0x200
 #define TEGRA_VOIP_RINGTONE	0x400
+#define TEGRA_VOIP_CALL	0x800
+#define TEGRA_SPEECH_MODE	0x1000
+
+#define DEVICE_MIC	0
+#define HEADSET_MIC	1
+#define HEADPHONE_MIC	2
+#endif
+
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+#define ACOUSTIC_DEVICE_MIC_VOIP_TABLE	0x02
+#define ACOUSTIC_HEADSET_MIC_VOIP_TABLE	0x04
+#define ACOUSTIC_DEVICE_MIC_RECORDING_TABLE	0x02
+#define ACOUSTIC_HEADSET_MIC_RECORDING_TABLE	0x04
+#define ACOUSTIC_CAMCORDER_TABLE	0x06
+#define ACOUSTIC_DEVICE_MIC_MUSIC_RECOGNITION_TABLE	0x03
+#define ACOUSTIC_HEADSET_MIC_MUSIC_RECOGNITION_TABLE	0x05
+#define ACOUSTIC_SPEECH_RECOGNITION_TABLE	0x07
+#define ACOUSTIC_CTS_VERIFIER_TABLE	0x08
+#else
+#define ACOUSTIC_DEVICE_MIC_VOIP_TABLE	0x02
+#define ACOUSTIC_DEVICE_MIC_RECORDING_TABLE	0x02
+#define ACOUSTIC_CAMCORDER_TABLE	0x04
+#define ACOUSTIC_FRONT_CAMCORDER_TABLE	0x02
+#define ACOUSTIC_REAR_CAMCORDER_TABLE	0x06
+#define ACOUSTIC_DEVICE_MIC_MUSIC_RECOGNITION_TABLE	0x04
+#define ACOUSTIC_SPEECH_RECOGNITION_TABLE	0x07
+#define ACOUSTIC_CTS_VERIFIER_TABLE	0x07
+#endif
+#elif defined(CONFIG_MACH_ACER_VANGOGH)
+#define ACOUSTIC_DEVICE_MIC_VOIP_TABLE	0x02
+#define ACOUSTIC_HEADSET_MIC_VOIP_TABLE	0x04
+#define ACOUSTIC_DEVICE_MIC_RECORDING_TABLE	0x02
+#define ACOUSTIC_HEADSET_MIC_RECORDING_TABLE	0x04
+#define ACOUSTIC_CAMCORDER_TABLE	0x06
+#define ACOUSTIC_DEVICE_MIC_MUSIC_RECOGNITION_TABLE	0x03
+#define ACOUSTIC_HEADSET_MIC_MUSIC_RECOGNITION_TABLE	0x05
+#define ACOUSTIC_SPEECH_RECOGNITION_TABLE	0x07
+#define ACOUSTIC_CTS_VERIFIER_TABLE	0x08
 #endif
 
 struct tegra_dma_channel;
@@ -124,12 +163,20 @@ struct tegra_audio_data {
 	bool isMicMuted;
 	bool isPowerOff;
 	bool isRingtone;
+	bool is_video_call_mode;
+	bool is_speech_mode;
+	int mode;
 #endif
 };
 
 struct wired_jack_conf {
 	int hp_det_n;
-#ifndef MACH_ACER_AUDIO
+#ifdef MACH_ACER_AUDIO
+	int en_spkr;
+	int en_fm2018;
+	int en_spkr_mute;
+	struct snd_soc_codec* codec;
+#else
 	int en_mic_int;
 	int en_mic_ext;
 	int cdc_irq;
@@ -142,7 +189,10 @@ struct wired_jack_conf {
 
 void tegra_ext_control(struct snd_soc_codec *codec, int new_con);
 int tegra_controls_init(struct snd_soc_codec *codec);
-
+int switch_audio_table(struct snd_soc_codec *codec, int new_con);
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+void reroute_table(void);
+#endif
 int tegra_jack_init(struct snd_soc_codec *codec);
 void tegra_jack_exit(void);
 void tegra_jack_resume(void);

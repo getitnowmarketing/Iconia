@@ -66,7 +66,11 @@ struct tegra_audio_platform_data {
 
 struct tegra_wired_jack_conf {
 	int hp_det_n;   /* headphone jack detection gpio pin */
-#ifndef MACH_ACER_AUDIO
+#if defined(MACH_ACER_AUDIO)
+	int en_spkr;    /* gpio pin to drive amplifier */
+	int en_fm2018;  /* gpio pin to drive voice processor */
+	int en_spkr_mute; /* gpio pin to drive amplifier mute */
+#else
 	int en_mic_ext; /* external mic enable gpio pin */
 	int en_mic_int; /* internal mic enable gpio pin */
 	int cdc_irq;    /* mic jack detection pin(IRQ-mode or generic gpio) */

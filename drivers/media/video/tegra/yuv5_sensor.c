@@ -408,6 +408,7 @@ static int sensor_set_mode(struct sensor_info *info, struct sensor_5m_mode *mode
 {
 	int sensor_table;
 	int err;
+	static int first_init = 1;
 	u16 val;
 
 	pr_info("yuv5 %s: xres %u yres %u\n", __func__, mode->xres, mode->yres);
@@ -473,6 +474,17 @@ static int sensor_set_mode(struct sensor_info *info, struct sensor_5m_mode *mode
 		err = sensor_write_table(info->i2c_client, mode_table[sensor_table]);
 		if (err)
 			return err;
+
+#if defined(CONFIG_MACH_ACER_VANGOGH)
+		// color dot workaround
+		if (!first_init) {
+			u16 reg_301A;
+			sensor_read_reg(info->i2c_client, 0x301A, &reg_301A);
+			reg_301A &= ~0x0008;
+			sensor_write_reg16(info->i2c_client, 0x301A, reg_301A);
+		}
+#endif
+
 		err = sensor_write_table(info->i2c_client, is_preview);
 		if (err)
 			return err;
@@ -492,6 +504,7 @@ static int sensor_set_mode(struct sensor_info *info, struct sensor_5m_mode *mode
 		int otpm_mode = 0;
 
 		pr_info("yuv5 %s: first time initialize one time table\n", __func__);
+		first_init = 0;
 		err = sensor_write_table(info->i2c_client, af_load_fw);
 		if (err)
 			return err;
@@ -945,8 +958,10 @@ static int sensor_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
 	int err;
+#if !defined(CONFIG_MACH_ACER_VANGOGH)
 	int device_check_ret, retry = 0;
 	u16 read_val = 0;
+#endif
 
 	pr_info("yuv5 %s\n", __func__);
 
@@ -960,6 +975,7 @@ static int sensor_probe(struct i2c_client *client,
 	info->pdata = client->dev.platform_data;
 	info->i2c_client = client;
 
+#if !defined(CONFIG_MACH_ACER_VANGOGH)
 	tegra_camera_enable_csi_power();
 	if (info->pdata && info->pdata->power_on)
 		info->pdata->power_on();
@@ -981,6 +997,7 @@ static int sensor_probe(struct i2c_client *client,
 		kfree(info);
 		return device_check_ret;
 	}
+#endif
 
 	err = misc_register(&sensor_device);
 	if (err) {
@@ -988,9 +1005,6 @@ static int sensor_probe(struct i2c_client *client,
 		kfree(info);
 		return err;
 	}
-
-	info->pdata = client->dev.platform_data;
-	info->i2c_client = client;
 
 	i2c_set_clientdata(client, info);
 

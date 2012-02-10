@@ -55,6 +55,11 @@
 #include "board.h"
 #include "board-ventana.h"
 
+#ifdef CONFIG_SENSORS_KXTF9
+#include <linux/kxtf9.h>
+#endif
+
+
 #define AL3000A_IRQ_GPIO	TEGRA_GPIO_PZ2
 #define AKM8975_IRQ_GPIO	TEGRA_GPIO_PN5
 #define CAMERA_POWER_GPIO	TEGRA_GPIO_PV4
@@ -81,6 +86,15 @@
 #define CAMERA_FLASH_MAX_LED_AMP	7
 #define CAMERA_FLASH_MAX_TORCH_AMP	11
 #define CAMERA_FLASH_MAX_FLASH_AMP	31
+
+#ifdef CONFIG_SENSORS_KXTF9
+#define KXTF9_DEVICE_MAP 6
+#define KXTF9_MAP_X (KXTF9_DEVICE_MAP-1)%2
+#define KXTF9_MAP_Y KXTF9_DEVICE_MAP%2
+#define KXTF9_NEG_X (KXTF9_DEVICE_MAP/2)%2
+#define KXTF9_NEG_Y (KXTF9_DEVICE_MAP+1)/4
+#define KXTF9_NEG_Z (KXTF9_DEVICE_MAP-1)/4
+#endif
 
 #if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)  \
 	|| defined(CONFIG_MACH_ACER_VANGOGH)
@@ -771,6 +785,13 @@ static struct mpu3050_platform_data mpu3050_data = {
 	.irq         = TEGRA_GPIO_TO_IRQ(AKM8975_IRQ_GPIO),
 	.bus         = EXT_SLAVE_BUS_PRIMARY,
 	.address     = 0x0C,
+#ifdef CONFIG_MACH_ACER_PICASSO_E
+		.orientation = {
+			0,  0,  0,
+			0,  0,  0,
+			0,  0,  0
+		},
+#endif
 #if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
 		.orientation = {
 			1,  0,  0,
@@ -815,11 +836,49 @@ static void ventana_mpuirq_init(void)
 }
 #endif
 
+#ifdef CONFIG_SENSORS_KXTF9
+static struct kxtf9_platform_data kxtf9_pdata = {
+		.min_interval = 1,
+		.poll_interval = 10,
+		.g_range = KXTF9_G_2G,
+		.shift_adj = SHIFT_ADJ_2G,
+		.axis_map_x = KXTF9_MAP_X,
+		.axis_map_y = KXTF9_MAP_Y,
+		.axis_map_z = 2,
+		.negate_x = KXTF9_NEG_X,
+		.negate_y = KXTF9_NEG_Y,
+		.negate_z = KXTF9_NEG_Z,
+		.data_odr_init = ODR100F,
+		.ctrl_reg1_init = KXTF9_G_2G | RES_12BIT,
+		.int_ctrl_init = 0x00,
+		.tilt_timer_init = 0x00,
+		.engine_odr_init = OTP1_6 | OWUF25 | OTDT50,
+		.wuf_timer_init = 0x00,
+		.wuf_thresh_init = 0x08,
+		.tdt_timer_init = 0x78,
+		.tdt_h_thresh_init = 0xB6,
+		.tdt_l_thresh_init = 0x1A,
+		.tdt_tap_timer_init = 0xA2,
+		.tdt_total_timer_init = 0x24,
+		.tdt_latency_timer_init = 0x28,
+		.tdt_window_timer_init = 0xA0,
+		.gpio = TEGRA_GPIO_PS7,
+};
+
+static struct i2c_board_info kxtf9_i2c0_board_info[] = {
+	{
+		I2C_BOARD_INFO("kxtf9", 0X0F),
+		.platform_data = &kxtf9_pdata,
+		},
+};
+
+#endif
 int __init ventana_sensors_init(void)
 {
 	struct board_info BoardInfo;
-
+#ifdef CONFIG_AL3000A_LIGHT_SENSOR
 	ventana_al3000a_init();
+#endif
 #ifdef CONFIG_SENSORS_AK8975
 	ventana_akm8975_init();
 #endif
@@ -876,6 +935,10 @@ int __init ventana_sensors_init(void)
 #ifdef CONFIG_MPU_SENSORS_MPU3050
 	i2c_register_board_info(0, mpu3050_i2c0_boardinfo,
 		ARRAY_SIZE(mpu3050_i2c0_boardinfo));
+#endif
+#ifdef CONFIG_SENSORS_KXTF9
+	i2c_register_board_info(0, kxtf9_i2c0_board_info,
+		ARRAY_SIZE(kxtf9_i2c0_board_info));
 #endif
 
 	return 0;

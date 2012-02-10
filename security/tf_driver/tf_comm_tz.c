@@ -27,11 +27,11 @@
 #include <linux/vmalloc.h>
 #include <linux/jiffies.h>
 
-#include "scxlnx_defs.h"
-#include "scxlnx_comm.h"
-#include "scx_protocol.h"
-#include "scxlnx_util.h"
-#include "scxlnx_conn.h"
+#include "tf_defs.h"
+#include "tf_comm.h"
+#include "tf_protocol.h"
+#include "tf_util.h"
+#include "tf_conn.h"
 
 /*
  * Structure common to all SMC operations
@@ -60,9 +60,7 @@ static inline void SCXLNXCommCallGenericSMC(
 	sched_getaffinity(0, &saved_cpu_mask);
 	ret = sched_setaffinity(0, &local_cpu_mask);
 	if (ret != 0)
-	{
 		dprintk(KERN_ERR "sched_setaffinity #1 -> 0x%lX", ret);
-	}
 #endif
 
 	__asm__ volatile(
@@ -83,9 +81,7 @@ static inline void SCXLNXCommCallGenericSMC(
 #ifdef CONFIG_SMP
 		ret = sched_setaffinity(0, &saved_cpu_mask);
 		if (ret != 0)
-		{
 			dprintk(KERN_ERR "sched_setaffinity #2 -> 0x%lX", ret);
-		}
 #endif
 }
 

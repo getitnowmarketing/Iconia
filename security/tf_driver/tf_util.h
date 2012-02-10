@@ -30,8 +30,8 @@
 #include <linux/vmalloc.h>
 #include <asm/byteorder.h>
 
-#include "scx_protocol.h"
-#include "scxlnx_defs.h"
+#include "tf_protocol.h"
+#include "tf_defs.h"
 
 /*----------------------------------------------------------------------------
  * Debug printing routines

@@ -39,6 +39,7 @@
 #define HEAD_DET_GPIO 0
 #define MIC_DET_GPIO  1
 #define SPK_EN_GPIO   3
+extern int getAudioTable(void);
 
 #if 1
 #define ACER_DBG(fmt, arg...) printk(KERN_INFO "[AUDIO]: %s: " fmt "\n", __FUNCTION__, ## arg)
@@ -51,8 +52,10 @@ int g_mic_state = 0;
 struct snd_soc_codec* g_codec;
 #endif
 
-extern void MicSwitch_int(void);
-extern void MicSwitch_ext(void);
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+extern void start_stop_psensor(int);
+extern void setAudioTable(int table_value);
+#endif
 
 struct wired_jack_conf tegra_wired_jack_conf = {
 	-1, -1, -1, -1, 0, NULL, NULL
@@ -144,24 +147,13 @@ static int wired_jack_detect(void)
 void select_mic_input(int state)
 {
 	int CtrlReg = 0;
-	struct wm8903_priv *wm8903_config = (struct wm8903_priv *)snd_soc_codec_get_drvdata(g_codec);
-
-	if (wm8903_config->fm2018_status == 1) {
-		CtrlReg |= WM8903_MICDET_ENA | WM8903_MICBIAS_ENA;
-		snd_soc_write(g_codec, WM8903_MIC_BIAS_CONTROL_0, CtrlReg);
-		ACER_DBG("Enable mic bias !!\n");
-	} else if (wm8903_config->fm2018_status == 0) {
-		CtrlReg &= ~(WM8903_MICDET_ENA | WM8903_MICBIAS_ENA);
-		snd_soc_write(g_codec, WM8903_MIC_BIAS_CONTROL_0, CtrlReg);
-		ACER_DBG("Disable mic bias !!\n");
-	}
-
+	pr_err("headset plug in %d\n", getAudioTable());
 	switch (state) {
 		case 0:
 		case 2:
 		{
-#ifdef CONFIG_MACH_ACER_VANGOGH
-			MicSwitch_int();
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+			setAudioTable(ACOUSTIC_DEVICE_MIC_RECORDING_TABLE);
 #else
 			CtrlReg = (0x0<<B06_IN_CM_ENA) |
 				(0x0<<B04_IP_SEL_N) | (0x1<<B02_IP_SEL_P) | (0x0<<B00_MODE);
@@ -173,8 +165,8 @@ void select_mic_input(int state)
 
 		case 1:
 		{
-#ifdef CONFIG_MACH_ACER_VANGOGH
-			MicSwitch_ext();
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+			setAudioTable(ACOUSTIC_HEADSET_MIC_RECORDING_TABLE);
 #else
 			CtrlReg = (0x0<<B06_IN_CM_ENA) |
 				(0x1<<B04_IP_SEL_N) | (0x1<<B02_IP_SEL_P) | (0x0<<B00_MODE);
@@ -215,10 +207,12 @@ static enum headset_state get_headset_state(void)
 	pr_debug("hp_gpio:%d, mic_gpio:%d\n", hp_gpio, mic_gpio);
 
 #if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
+	start_stop_psensor(0);
 	if (wired_jack_detect() == 1)
 		mic_gpio = 1;
 	else
 		mic_gpio = 0;
+	start_stop_psensor(1);
 #endif
 	flag = (hp_gpio << 4) | mic_gpio;
 
@@ -294,6 +288,11 @@ static int tegra_wired_jack_probe(struct platform_device *pdev)
 	int ret;
 #ifdef MACH_ACER_AUDIO
 	int hp_det_n;
+	int en_spkr;
+	int en_fm2018;
+#if defined(CONFIG_MACH_ACER_VANGOGH)
+	int en_spkr_mute;
+#endif
 #else
 	int hp_det_n, cdc_irq;
 	int en_mic_int, en_mic_ext;
@@ -303,7 +302,12 @@ static int tegra_wired_jack_probe(struct platform_device *pdev)
 
 	pdata = (struct tegra_wired_jack_conf *)pdev->dev.platform_data;
 #ifdef MACH_ACER_AUDIO
-	if (!pdata || !pdata->hp_det_n) {
+	if (!pdata || !pdata->hp_det_n || !pdata->en_spkr ||
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
+		!pdata->en_fm2018) {
+#elif defined(CONFIG_MACH_ACER_VANGOGH)
+		!pdata->en_fm2018 || !pdata->en_spkr_mute) {
+#endif
 #else
 	if (!pdata || !pdata->hp_det_n || !pdata->en_spkr ||
 	    !pdata->cdc_irq || !pdata->en_mic_int || !pdata->en_mic_ext) {
@@ -331,7 +335,41 @@ static int tegra_wired_jack_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-#ifndef MACH_ACER_AUDIO
+#ifdef MACH_ACER_AUDIO
+	en_spkr = pdata->en_spkr;
+	ret = gpio_request(en_spkr, "en_spkr");
+	if (ret) {
+		pr_err("Could NOT set up gpio pin for amplifier.\n");
+		gpio_free(en_spkr);
+	}
+#if defined(CONFIG_MACH_ACER_VANGOGH)
+	gpio_direction_output(en_spkr, 1);
+#else
+	gpio_direction_output(en_spkr, 0);
+#endif
+	gpio_export(en_spkr, false);
+
+	en_fm2018 = pdata->en_fm2018;
+	ret = gpio_request(en_fm2018, "en_fm2018");
+	if (ret) {
+		pr_err("Could NOT set up gpio pin for fm2018.\n");
+		gpio_free(en_fm2018);
+	}
+	gpio_direction_output(en_fm2018, 0);
+	gpio_export(en_fm2018, false);
+
+#if defined(CONFIG_MACH_ACER_VANGOGH)
+	en_spkr_mute = pdata->en_spkr_mute;
+	ret = gpio_request(en_spkr_mute, "en_spkr_mute");
+	if (ret) {
+		pr_err("Could NOT set up gpio pin for amplifier.\n");
+		gpio_free(en_spkr_mute);
+	}
+	gpio_direction_output(en_spkr_mute, 1);
+	gpio_export(en_spkr_mute, false);
+#endif
+
+#else
 	/* Mic switch controlling pins */
 	en_mic_int = pdata->en_mic_int;
 	en_mic_ext = pdata->en_mic_ext;
@@ -369,7 +407,14 @@ static int tegra_wired_jack_probe(struct platform_device *pdev)
 
 	/* restore configuration of these pins */
 	tegra_wired_jack_conf.hp_det_n = hp_det_n;
-#ifndef MACH_ACER_AUDIO
+#ifdef MACH_ACER_AUDIO
+	tegra_wired_jack_conf.codec = g_codec;
+	tegra_wired_jack_conf.en_spkr = en_spkr;
+	tegra_wired_jack_conf.en_fm2018 = en_fm2018;
+#if defined(CONFIG_MACH_ACER_VANGOGH)
+	tegra_wired_jack_conf.en_spkr_mute = en_spkr_mute;
+#endif
+#else
 	tegra_wired_jack_conf.en_mic_int = en_mic_int;
 	tegra_wired_jack_conf.en_mic_ext = en_mic_ext;
 	tegra_wired_jack_conf.cdc_irq = cdc_irq;
@@ -392,7 +437,13 @@ static int tegra_wired_jack_remove(struct platform_device *pdev)
 				ARRAY_SIZE(wired_jack_gpios),
 				wired_jack_gpios);
 
-#ifndef MACH_ACER_AUDIO
+#ifdef MACH_ACER_AUDIO
+	gpio_free(tegra_wired_jack_conf.en_spkr);
+	gpio_free(tegra_wired_jack_conf.en_fm2018);
+#if defined(CONFIG_MACH_ACER_VANGOGH)
+	gpio_free(tegra_wired_jack_conf.en_spkr_mute);
+#endif
+#else
 	gpio_free(tegra_wired_jack_conf.en_mic_int);
 	gpio_free(tegra_wired_jack_conf.en_mic_ext);
 	gpio_free(tegra_wired_jack_conf.en_spkr);

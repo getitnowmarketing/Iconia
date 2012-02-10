@@ -178,7 +178,11 @@ static int tegra_fb_set_par(struct fb_info *info)
 		struct tegra_dc_mode mode;
 
 		if (tegra_fb->win->dc->out->type == TEGRA_DC_OUT_HDMI) {
-			info->mode = hdmi_find_best_mode(var);
+#ifdef CONFIG_TEGRA_HDMI
+			info->mode = (struct fb_videomode *) hdmi_find_best_mode(var);
+#else
+			info->mode = (struct fb_videomode *) fb_find_best_mode(var, &info->modelist);
+#endif
 		} else {
 			info->mode = (struct fb_videomode *)
 				fb_find_best_mode(var, &info->modelist);
@@ -307,6 +311,8 @@ static int tegra_fb_pan_display(struct fb_var_screeninfo *var,
 		tegra_fb->win->phys_addr = addr;
 		/* TODO: update virt_addr */
 
+		tegra_dc_set_default_emc(tegra_fb->win->dc);
+		tegra_dc_set_dynamic_emc(&tegra_fb->win, 1);
 		tegra_dc_update_windows(&tegra_fb->win, 1);
 		tegra_dc_sync_windows(&tegra_fb->win, 1);
 	}
@@ -517,6 +523,7 @@ static void tegra_fb_flip_worker(struct work_struct *work)
 #endif
 	}
 
+	tegra_dc_set_dynamic_emc(wins, nr_win);
 	tegra_dc_update_windows(wins, nr_win);
 	/* TODO: implement swapinterval here */
 	tegra_dc_sync_windows(wins, nr_win);
@@ -573,6 +580,12 @@ static int tegra_fb_flip(struct tegra_fb_info *tegra_fb,
 	data->syncpt_max = syncpt_max;
 
 	queue_work(tegra_fb->flip_wq, &data->work);
+
+	/*
+	 * Before the queued flip_wq get scheduled, we set the EMC clock to the
+	 * default value in order to do FLIP without glitch.
+	 */
+	tegra_dc_set_default_emc(tegra_fb->win->dc);
 
 	args->post_syncpt_val = syncpt_max;
 	args->post_syncpt_id = tegra_dc_get_syncpt_id(tegra_fb->win->dc);
@@ -867,6 +880,8 @@ struct tegra_fb_info *tegra_fb_register(struct nvhost_device *ndev,
 	dev_info(&ndev->dev, "probed\n");
 
 	if (fb_data->flags & TEGRA_FB_FLIP_ON_PROBE) {
+		tegra_dc_set_default_emc(tegra_fb->win->dc);
+		tegra_dc_set_dynamic_emc(&tegra_fb->win, 1);
 		tegra_dc_update_windows(&tegra_fb->win, 1);
 		tegra_dc_sync_windows(&tegra_fb->win, 1);
 	}

@@ -21,8 +21,10 @@
 #include <linux/regulator/consumer.h>
 #include <linux/sysfs.h>
 #include "../codecs/wm8903.h"
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
 #include "tegra_wired_jack.h"
+extern int getAudioTable(void);
+extern void setAudioTable(int table_value);
 #endif
 
 #ifdef CONFIG_MACH_ACER_VANGOGH
@@ -115,6 +117,7 @@ static ssize_t digital_mic_store(struct device *dev,
 
 static DEVICE_ATTR(enable_digital_mic, 0644, digital_mic_show, digital_mic_store);
 
+#ifndef MACH_ACER_AUDIO
 static void configure_dmic(struct snd_soc_codec *codec)
 {
 	u16 test4, reg;
@@ -149,6 +152,7 @@ static void configure_dmic(struct snd_soc_codec *codec)
 	snd_soc_write(codec, WM8903_CONTROL_INTERFACE_TEST_1, reg);
 
 }
+#endif
 
 static int tegra_hifi_hw_params(struct snd_pcm_substream *substream,
 					struct snd_pcm_hw_params *params)
@@ -202,11 +206,11 @@ static int tegra_hifi_hw_params(struct snd_pcm_substream *substream,
 
 	if (substream->stream != SNDRV_PCM_STREAM_PLAYBACK) {
 		int CtrlReg = 0;
-		int VolumeCtrlReg = 0;
-		int SidetoneCtrlReg = 0;
-
-		snd_soc_write(codec, WM8903_ANALOGUE_LEFT_INPUT_0, 0X7);
-		snd_soc_write(codec, WM8903_ANALOGUE_RIGHT_INPUT_0, 0X7);
+		pr_err("SNDRV_PCM_STREAM_CAPTURE \n");
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+		if (!audio_data->is_speech_mode)
+			reroute_table();
+#endif
 		/* Mic Bias enable */
 		CtrlReg = (0x1<<B00_MICBIAS_ENA) | (0x1<<B01_MICDET_ENA);
 		snd_soc_write(codec, WM8903_MIC_BIAS_CONTROL_0, CtrlReg);
@@ -214,9 +218,16 @@ static int tegra_hifi_hw_params(struct snd_pcm_substream *substream,
 		CtrlReg = snd_soc_read(codec, WM8903_DRC_0);
 		CtrlReg |= (1<<B15_DRC_ENA);
 		snd_soc_write(codec, WM8903_DRC_0, CtrlReg);
+		CtrlReg = snd_soc_read(codec, R29_DRC_1);
+		CtrlReg |= 0x3; /*mic volume 18 db */
+		snd_soc_write(codec, R29_DRC_1, CtrlReg);
 		/* Single Ended Mic */
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
-		if (wired_jack_state() == 1) {
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+		CtrlReg = (0x0<<B06_IN_CM_ENA) |
+			(0x0<<B00_MODE) | (0x0<<B04_IP_SEL_N)
+					| (0x1<<B02_IP_SEL_P);
+#elif defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
+		if (wired_jack_state() == HEADSET_MIC) {
 			CtrlReg = (0x0<<B06_IN_CM_ENA) |
 				(0x0<<B00_MODE) | (0x1<<B04_IP_SEL_N)
 				| (0x1<<B02_IP_SEL_P);
@@ -225,41 +236,43 @@ static int tegra_hifi_hw_params(struct snd_pcm_substream *substream,
 				(0x0<<B00_MODE) | (0x0<<B04_IP_SEL_N)
 				| (0x1<<B02_IP_SEL_P);
 		}
-#elif defined(CONFIG_MACH_ACER_VANGOGH)
-		if (wired_jack_state() == 1) {
-			select_mic_input(1);
-		} else {
-			select_mic_input(2);
-		}
-		CtrlReg = (0x0<<B06_IN_CM_ENA) |
-			(0x0<<B00_MODE) | (0x0<<B04_IP_SEL_N)
-					| (0x1<<B02_IP_SEL_P);
 #else
 		CtrlReg = (0x0<<B06_IN_CM_ENA) |
 			(0x0<<B00_MODE) | (0x0<<B04_IP_SEL_N)
 					| (0x1<<B02_IP_SEL_P);
 #endif
-
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
-		VolumeCtrlReg = (0x10 << B00_IN_VOL);
-#else
-		VolumeCtrlReg = (0x1C << B00_IN_VOL);
-#endif
-		/* Mic Setting */
 		snd_soc_write(codec, WM8903_ANALOGUE_LEFT_INPUT_1, CtrlReg);
 		snd_soc_write(codec, WM8903_ANALOGUE_RIGHT_INPUT_1, CtrlReg);
 		/* voulme for single ended mic */
-		snd_soc_write(codec, WM8903_ANALOGUE_LEFT_INPUT_0,
-				VolumeCtrlReg);
-		snd_soc_write(codec, WM8903_ANALOGUE_RIGHT_INPUT_0,
-				VolumeCtrlReg);
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
+		if (!audio_data->is_video_call_mode && !audio_data->is_speech_mode) {
+			CtrlReg = (0x1C << B00_IN_VOL);
+		}
+#elif defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+		if (!audio_data->is_video_call_mode && !audio_data->is_speech_mode) {
+			CtrlReg = (0x1C << B00_IN_VOL);
+		} else {
+			CtrlReg = (0x10 << B00_IN_VOL);
+		}
+#else
+		CtrlReg = (0x1C << B00_IN_VOL);
+#endif
+		snd_soc_write(codec, WM8903_ANALOGUE_LEFT_INPUT_0, CtrlReg);
+		snd_soc_write(codec, WM8903_ANALOGUE_RIGHT_INPUT_0, CtrlReg);
 		/* Left ADC data on both channels */
 		CtrlReg = snd_soc_read(codec, WM8903_AUDIO_INTERFACE_0);
 		CtrlReg  = SET_REG_VAL(CtrlReg, 0x1, B06_AIF_ADCR, 0x0);
 		CtrlReg  = SET_REG_VAL(CtrlReg, 0x1, B06_AIF_ADCL, 0x0);
 		snd_soc_write(codec, WM8903_AUDIO_INTERFACE_0, CtrlReg);
+		/* ADC Settings */
+		CtrlReg = snd_soc_read(codec, WM8903_ADC_DIGITAL_0);
+		CtrlReg |= (0x1<<B04_ADC_HPF_ENA);
+		snd_soc_write(codec, WM8903_ADC_DIGITAL_0, CtrlReg);
+		/* Disable sidetone */
+		CtrlReg = 0;
+		snd_soc_write(codec, R20_SIDETONE_CTRL, CtrlReg);
 		/* Enable analog inputs */
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
 		if (audio_data->isMicMuted)
 			CtrlReg = (0x0<<B01_INL_ENA);
 		else
@@ -268,22 +281,14 @@ static int tegra_hifi_hw_params(struct snd_pcm_substream *substream,
 		CtrlReg = (0x1<<B01_INL_ENA);
 #endif
 		snd_soc_write(codec, WM8903_POWER_MANAGEMENT_0, CtrlReg);
-		/* ADC Settings */
-		CtrlReg = snd_soc_read(codec, WM8903_ADC_DIGITAL_0);
-		CtrlReg |= (0x1<<B04_ADC_HPF_ENA);
-		snd_soc_write(codec, WM8903_ADC_DIGITAL_0, CtrlReg);
-		/* Disable sidetone */
-		CtrlReg = 0;
-		snd_soc_write(codec, R20_SIDETONE_CTRL, CtrlReg);
 		/* Enable ADC */
 		CtrlReg = snd_soc_read(codec, WM8903_POWER_MANAGEMENT_6);
 		CtrlReg |= (0x1<<B01_ADCL_ENA);
 		snd_soc_write(codec, WM8903_POWER_MANAGEMENT_6, CtrlReg);
-		CtrlReg = snd_soc_read(codec, R29_DRC_1);
-		CtrlReg |= 0x3; /*mic volume 18 db */
-		snd_soc_write(codec, R29_DRC_1, CtrlReg);
 
+#ifndef MACH_ACER_AUDIO
 		configure_dmic(codec);
+#endif
 
 	}
 
@@ -387,6 +392,11 @@ void tegra_codec_shutdown(struct snd_pcm_substream *substream)
 int tegra_soc_suspend_pre(struct platform_device *pdev, pm_message_t state)
 {
 	tegra_jack_suspend();
+
+#if defined(CONFIG_MACH_ACER_VANGOGH)
+	gpio_set_value_cansleep(tegra_wired_jack_conf.en_spkr, 0);
+#endif
+
 	return 0;
 }
 
@@ -413,6 +423,11 @@ int tegra_soc_resume_pre(struct platform_device *pdev)
 int tegra_soc_resume_post(struct platform_device *pdev)
 {
 	tegra_jack_resume();
+
+#if defined(CONFIG_MACH_ACER_VANGOGH)
+	gpio_set_value_cansleep(tegra_wired_jack_conf.en_spkr, 1);
+#endif
+
 	return 0;
 }
 
@@ -436,14 +451,117 @@ static struct snd_soc_ops tegra_spdif_ops = {
 static void hp_enable(struct snd_soc_codec *codec, int enable)
 {
 	if (enable) {
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+		snd_soc_write(codec, WM8903_ANALOGUE_OUT1_LEFT, 0xAD);
+		snd_soc_write(codec, WM8903_ANALOGUE_OUT1_RIGHT, 0xAD);
+#else
 		snd_soc_write(codec, WM8903_ANALOGUE_OUT1_LEFT, 0xB8);
 		snd_soc_write(codec, WM8903_ANALOGUE_OUT1_RIGHT, 0xB8);
+#endif
 		pr_info("[Audio] Headphone Unmute");
 	} else {
 		snd_soc_write(codec, WM8903_ANALOGUE_OUT1_LEFT, 0x1B8);
 		snd_soc_write(codec, WM8903_ANALOGUE_OUT1_RIGHT, 0x1B8);
 		pr_info("[Audio] Headphone Mute");
 	}
+}
+
+
+static void speaker_louder(struct snd_soc_codec *codec, bool enable)
+{
+	int CtrlReg = 0;
+	CtrlReg = snd_soc_read(codec, WM8903_ANALOGUE_LEFT_INPUT_0);
+	CtrlReg &= ~0x1F;
+	CtrlReg |= 0x10;
+	snd_soc_write(codec, WM8903_ANALOGUE_LEFT_INPUT_0, CtrlReg);
+	snd_soc_write(codec, WM8903_ANALOGUE_RIGHT_INPUT_0, CtrlReg);
+	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_LEFT, 0xBF);
+	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_RIGHT, 0xBF);
+	pr_info("[Audio] Video Call: speaker louder mode!\n");
+}
+
+static void voip_hp(struct snd_soc_codec *codec, bool enable)
+{
+	int CtrlReg = 0;
+		CtrlReg = snd_soc_read(codec, WM8903_ANALOGUE_LEFT_INPUT_0);
+		CtrlReg &= ~0x1F;
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+		snd_soc_write(codec, WM8903_POWER_MANAGEMENT_3, 0x03);
+		CtrlReg |= 0x1C;
+#else
+		CtrlReg |= 0x10;
+#endif
+		snd_soc_write(codec, WM8903_ANALOGUE_LEFT_INPUT_0, CtrlReg);
+		snd_soc_write(codec, WM8903_ANALOGUE_RIGHT_INPUT_0, CtrlReg);
+		pr_info("[Audio] Video Call: headset mode!\n");
+}
+
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+void reroute_table(void)
+{
+	if (wired_jack_state() == HEADSET_MIC) {
+		if ((getAudioTable() != ACOUSTIC_HEADSET_MIC_MUSIC_RECOGNITION_TABLE) &&
+		   (getAudioTable() != ACOUSTIC_CAMCORDER_TABLE))
+			setAudioTable(ACOUSTIC_HEADSET_MIC_RECORDING_TABLE);
+	} else if (wired_jack_state() == HEADPHONE_MIC) {
+		if (getAudioTable() == ACOUSTIC_HEADSET_MIC_MUSIC_RECOGNITION_TABLE) {
+			setAudioTable(ACOUSTIC_DEVICE_MIC_MUSIC_RECOGNITION_TABLE);
+		}
+	} else {
+		if ((getAudioTable() != ACOUSTIC_DEVICE_MIC_MUSIC_RECOGNITION_TABLE) &&
+		   (getAudioTable() != ACOUSTIC_CAMCORDER_TABLE))
+			setAudioTable(ACOUSTIC_DEVICE_MIC_RECORDING_TABLE);
+	}
+	pr_err("rerout table %d \n", getAudioTable());
+}
+#endif
+
+int switch_audio_table(struct snd_soc_codec *codec, int new_con)
+{
+	struct tegra_audio_data* audio_data = codec->socdev->codec_data;
+
+	if (new_con & TEGRA_VOIP_CALL) {
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+		if (wired_jack_state() == HEADSET_MIC)
+			audio_data->mode = ACOUSTIC_HEADSET_MIC_VOIP_TABLE;
+		else
+			audio_data->mode = ACOUSTIC_DEVICE_MIC_VOIP_TABLE;
+#else
+		audio_data->mode = ACOUSTIC_DEVICE_MIC_VOIP_TABLE;
+#endif
+	} else if (new_con & TEGRA_SPEECH_MODE) {
+		if (wired_jack_state() == DEVICE_MIC || wired_jack_state() == HEADPHONE_MIC)
+			audio_data->mode = ACOUSTIC_SPEECH_RECOGNITION_TABLE;
+	} else {
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+		if (wired_jack_state() == HEADSET_MIC)
+			audio_data->mode = ACOUSTIC_HEADSET_MIC_RECORDING_TABLE;
+		else
+			audio_data->mode = ACOUSTIC_DEVICE_MIC_RECORDING_TABLE;
+#else
+			audio_data->mode = ACOUSTIC_DEVICE_MIC_RECORDING_TABLE;
+#endif
+	}
+
+	if (audio_data->mode != getAudioTable()) {
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+		if ((getAudioTable() == ACOUSTIC_DEVICE_MIC_MUSIC_RECOGNITION_TABLE) ||
+			(getAudioTable() == ACOUSTIC_HEADSET_MIC_MUSIC_RECOGNITION_TABLE) ||
+			(getAudioTable() == ACOUSTIC_CAMCORDER_TABLE)) {
+			if (!audio_data->is_speech_mode)
+				return 0;
+		}
+#else
+		if ((getAudioTable() == ACOUSTIC_DEVICE_MIC_MUSIC_RECOGNITION_TABLE) ||
+			(getAudioTable() == ACOUSTIC_REAR_CAMCORDER_TABLE)) {
+			return 0;
+		}
+#endif
+		pr_info("[Audio] previous mode %d, current mode %d !\n", getAudioTable(), audio_data->mode);
+		setAudioTable(audio_data->mode);
+	}
+
+	return 1;
 }
 #endif
 
@@ -520,10 +638,24 @@ void tegra_ext_control(struct snd_soc_codec *codec, int new_con)
 	}
 
 	if (new_con & (TEGRA_HEADPHONE | TEGRA_HEADSET_OUT |
-			TEGRA_HEADSET_IN))
+			TEGRA_HEADSET_IN | TEGRA_VOIP_RINGTONE))
 		hp_enable(codec, 1);
 	else
 		hp_enable(codec, 0);
+
+	if (new_con & TEGRA_VOIP_CALL) {
+		CtrlReg = snd_soc_read(codec, WM8903_ANALOGUE_LEFT_INPUT_0);
+		CtrlReg &= ~0x1F;
+		CtrlReg |= 0x10;
+		snd_soc_write(codec, WM8903_ANALOGUE_LEFT_INPUT_0, CtrlReg);
+		snd_soc_write(codec, WM8903_ANALOGUE_RIGHT_INPUT_0, CtrlReg);
+
+		if (new_con & (TEGRA_HEADSET_OUT | TEGRA_HEADSET_IN))
+			voip_hp(codec, true);
+		else if (new_con & (TEGRA_LINEOUT | TEGRA_EAR_SPK | TEGRA_SPK))
+			speaker_louder(codec, true);
+	}
+	switch_audio_table(codec, new_con);
 #endif
 
 	/* signal a DAPM event */
@@ -534,8 +666,24 @@ void tegra_ext_control(struct snd_soc_codec *codec, int new_con)
 static int tegra_dapm_event_int_spk(struct snd_soc_dapm_widget* w,
 				    struct snd_kcontrol* k, int event)
 {
-#ifndef MACH_ACER_AUDIO
 	if (tegra_wired_jack_conf.en_spkr != -1) {
+#ifdef MACH_ACER_AUDIO
+		if (SND_SOC_DAPM_EVENT_ON(event)) {
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
+			gpio_set_value_cansleep(tegra_wired_jack_conf.en_spkr, 1);
+#elif defined(CONFIG_MACH_ACER_VANGOGH)
+			gpio_set_value_cansleep(tegra_wired_jack_conf.en_spkr_mute, 0);
+#endif
+			pr_info("Audio: speaker on!!\n");
+		} else {
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
+			gpio_set_value_cansleep(tegra_wired_jack_conf.en_spkr, 0);
+#elif defined(CONFIG_MACH_ACER_VANGOGH)
+			gpio_set_value_cansleep(tegra_wired_jack_conf.en_spkr_mute, 1);
+#endif
+			pr_info("Audio: speaker off!!\n");
+		}
+#else
 		if (tegra_wired_jack_conf.amp_reg) {
 			if (SND_SOC_DAPM_EVENT_ON(event) &&
 				!tegra_wired_jack_conf.amp_reg_enabled) {
@@ -551,8 +699,8 @@ static int tegra_dapm_event_int_spk(struct snd_soc_dapm_widget* w,
 
 		gpio_set_value_cansleep(tegra_wired_jack_conf.en_spkr,
 			SND_SOC_DAPM_EVENT_ON(event) ? 1 : 0);
-	}
 #endif
+	}
 
 	return 0;
 }
@@ -560,7 +708,44 @@ static int tegra_dapm_event_int_spk(struct snd_soc_dapm_widget* w,
 static int tegra_dapm_event_int_mic(struct snd_soc_dapm_widget* w,
 				    struct snd_kcontrol* k, int event)
 {
-#ifndef MACH_ACER_AUDIO
+#ifdef MACH_ACER_AUDIO
+	int CtrlReg = 0;
+	struct wm8903_priv *wm8903 = (struct wm8903_priv *)snd_soc_codec_get_drvdata(tegra_wired_jack_conf.codec);
+
+	if (SND_SOC_DAPM_EVENT_ON(event)) {
+		gpio_set_value_cansleep(tegra_wired_jack_conf.en_fm2018, 1);
+
+		CtrlReg = (0x1 << B00_MICBIAS_ENA) | (0x1 << B01_MICDET_ENA);
+		snd_soc_write(tegra_wired_jack_conf.codec,
+			WM8903_MIC_BIAS_CONTROL_0, CtrlReg);
+
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+		// Enable analog inputs
+		CtrlReg = (0x1<<B01_INL_ENA);
+		snd_soc_write(tegra_wired_jack_conf.codec, WM8903_POWER_MANAGEMENT_0, CtrlReg);
+
+		// Enable ADC
+		CtrlReg = snd_soc_read(tegra_wired_jack_conf.codec, WM8903_POWER_MANAGEMENT_6);
+		CtrlReg |= (0x1<<B01_ADCL_ENA);
+		snd_soc_write(tegra_wired_jack_conf.codec, WM8903_POWER_MANAGEMENT_6, CtrlReg);
+#endif
+
+		pr_info("Audio: int mic enable! \n");
+	} else {
+		if (wm8903->capture_active > 0) {
+			CtrlReg = (0x1 << B00_MICBIAS_ENA) | (0x1 << B01_MICDET_ENA);
+			snd_soc_write(tegra_wired_jack_conf.codec,
+			WM8903_MIC_BIAS_CONTROL_0, CtrlReg);
+			pr_info("Audio: enable mic bias! \n");
+		} else {
+			gpio_set_value_cansleep(tegra_wired_jack_conf.en_fm2018, 0);
+
+			snd_soc_write(tegra_wired_jack_conf.codec,
+				WM8903_MIC_BIAS_CONTROL_0, CtrlReg);
+			pr_info("Audio: int mic disable! \n");
+		}
+	}
+#else
 	if (tegra_wired_jack_conf.en_mic_int != -1)
 		gpio_set_value_cansleep(tegra_wired_jack_conf.en_mic_int,
 			SND_SOC_DAPM_EVENT_ON(event) ? 1 : 0);
@@ -576,7 +761,28 @@ static int tegra_dapm_event_int_mic(struct snd_soc_dapm_widget* w,
 static int tegra_dapm_event_ext_mic(struct snd_soc_dapm_widget* w,
 				    struct snd_kcontrol* k, int event)
 {
-#ifndef MACH_ACER_AUDIO
+#ifdef MACH_ACER_AUDIO
+	int CtrlReg = 0;
+
+	if (SND_SOC_DAPM_EVENT_ON(event)) {
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+		gpio_set_value_cansleep(tegra_wired_jack_conf.en_fm2018, 1);
+#endif
+		CtrlReg = (0x1 << B00_MICBIAS_ENA) | (0x1 << B01_MICDET_ENA);
+		snd_soc_write(tegra_wired_jack_conf.codec,
+			WM8903_MIC_BIAS_CONTROL_0, CtrlReg);
+
+		pr_info("Audio: ext mic enable! \n");
+	} else {
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+		gpio_set_value_cansleep(tegra_wired_jack_conf.en_fm2018, 0);
+#endif
+		snd_soc_write(tegra_wired_jack_conf.codec,
+			WM8903_MIC_BIAS_CONTROL_0, CtrlReg);
+
+		pr_info("Audio: ext mic disable! \n");
+	}
+#else
 	if (tegra_wired_jack_conf.en_mic_ext != -1)
 		gpio_set_value_cansleep(tegra_wired_jack_conf.en_mic_ext,
 			SND_SOC_DAPM_EVENT_ON(event) ? 1 : 0);
@@ -661,8 +867,13 @@ failed:
 static const struct snd_soc_dapm_widget tegra_dapm_widgets[] = {
 	SND_SOC_DAPM_HP("Headphone", NULL),
 	SND_SOC_DAPM_HP("Headset Out", NULL),
+#if defined(MACH_ACER_AUDIO)
+	SND_SOC_DAPM_MIC("Headset In", tegra_dapm_event_ext_mic),
+	SND_SOC_DAPM_SPK("Lineout", tegra_dapm_event_int_spk),
+#else
 	SND_SOC_DAPM_MIC("Headset In", NULL),
 	SND_SOC_DAPM_SPK("Lineout", NULL),
+#endif
 	SND_SOC_DAPM_SPK("Int Spk", tegra_dapm_event_int_spk),
 	SND_SOC_DAPM_MIC("Ext Mic", tegra_dapm_event_ext_mic),
 	SND_SOC_DAPM_MIC("Int Mic", tegra_dapm_event_int_mic),
@@ -679,7 +890,9 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	/* headset Jack  - in = micin, out = HPOUT*/
 	{"Headset Out", NULL, "HPOUTR"},
 	{"Headset Out", NULL, "HPOUTL"},
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+	{"IN1L", NULL, "Headset In"},
+#elif defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
 	{"IN2L", NULL, "Headset In"},
 #else
 	{"IN1L", NULL, "Headset In"},
@@ -699,7 +912,10 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	{"IN1R", NULL, "Int Mic"},
 
 	/* external mic is stereo */
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+	{"IN1L", NULL, "Ext Mic"},
+	{"IN1R", NULL, "Ext Mic"},
+#elif defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
 	{"IN2L", NULL, "Ext Mic"},
 	{"IN2R", NULL, "Ext Mic"},
 #else
@@ -758,6 +974,10 @@ static int tegra_codec_init(struct snd_soc_codec *codec)
 		if (ret < 0) {
 			pr_err("Failed in cdc irq init \n");
 		}
+#endif
+
+#ifdef MACH_ACER_AUDIO
+		snd_soc_write(codec, WM8903_MIC_BIAS_CONTROL_0, 0);
 #endif
 
 		audio_data->codec = codec;

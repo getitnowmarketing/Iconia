@@ -27,6 +27,11 @@
 #include <linux/mmc/card.h>
 
 #include <mach/sdhci.h>
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
+#include <linux/seq_file.h>
+#include <linux/fs.h>
+#include <linux/debugfs.h>
+#endif
 
 #include "sdhci.h"
 
@@ -50,9 +55,20 @@ static irqreturn_t carddetect_irq(int irq, void *data)
 {
 	struct sdhci_host *sdhost = (struct sdhci_host *)data;
 	struct tegra_sdhci_host *host = sdhci_priv(sdhost);
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
+	struct tegra_sdhci_platform_data *plat;
+	plat = sdhost->mmc->parent->platform_data;
+#endif
 
 	host->card_present =
 		(gpio_get_value(host->cd_gpio) == host->cd_gpio_polarity);
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
+	if (host->card_present == 1) {
+		gpio_set_value(plat->power_gpio, 1);
+	} else {
+		gpio_set_value(plat->power_gpio, 0);
+	}
+#endif
 	tasklet_schedule(&sdhost->card_tasklet);
 	return IRQ_HANDLED;
 };
@@ -114,6 +130,36 @@ static struct sdhci_ops tegra_sdhci_ops = {
 	.get_ro = tegra_sdhci_get_ro,
 	.card_detect = tegra_sdhci_card_detect,
 };
+
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
+static int sd_cd_show(struct seq_file *s, void *data)
+{
+	struct tegra_sdhci_host *host = s->private;
+	int value = gpio_get_value(host->cd_gpio);
+	const char *str;
+
+	if (value == 0) {
+		str = "inserted";
+	} else {
+		str = "removed";
+	}
+	seq_printf(s, "micro sd card detect GPIO value : %d (%s)\n", value, str);
+
+	return 0;
+}
+
+static int sd_cd_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, sd_cd_show, inode->i_private);
+}
+
+static const struct file_operations sd_ios_fops = {
+	.open		= sd_cd_open,
+	.read		= seq_read,
+	.llseek	= seq_lseek,
+	.release	= single_release,
+};
+#endif
 
 static int __devinit tegra_sdhci_probe(struct platform_device *pdev)
 {
@@ -213,6 +259,15 @@ static int __devinit tegra_sdhci_probe(struct platform_device *pdev)
 			goto err_remove_host;
 		host->card_present =
 			(gpio_get_value(plat->cd_gpio) == host->cd_gpio_polarity);
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
+		if (host->card_present == 1) {
+			gpio_set_value(plat->power_gpio, 1);
+		} else {
+			gpio_set_value(plat->power_gpio, 0);
+		}
+		if (!debugfs_create_file("SD_CD", 0444, host->sdhci->mmc->debugfs_root, host, &sd_ios_fops))
+			printk(KERN_ERR "create debugfs_create_file SD_CD fail\n");
+#endif
 	} else if (plat->register_status_notify) {
 		plat->register_status_notify(
 			tegra_sdhci_status_notify_cb, sdhci);
@@ -318,7 +373,7 @@ static int tegra_sdhci_suspend(struct platform_device *pdev, pm_message_t state)
 	struct tegra_sdhci_host *host = platform_get_drvdata(pdev);
 	int ret = 0;
 
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
 	struct tegra_sdhci_platform_data *plat;
 	plat = pdev->dev.platform_data;
 #endif
@@ -357,8 +412,8 @@ static int tegra_sdhci_suspend(struct platform_device *pdev, pm_message_t state)
 		pr_err("%s: failed, error = %d\n", __func__, ret);
 
 	tegra_sdhci_enable_clock(host, 0);
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA)
-	if (plat->power_gpio != -1)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
+	if (plat->power_gpio != -1 && host->card_present == 1)
 		gpio_set_value(plat->power_gpio, 0);
 #endif
 	return ret;
@@ -370,9 +425,11 @@ static int tegra_sdhci_resume(struct platform_device *pdev)
 	int ret;
 	u8 pwr;
 
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
 	struct tegra_sdhci_platform_data *plat;
+	struct sdhci_host *sdhost;
 	plat = pdev->dev.platform_data;
+	sdhost = host->sdhci;
 #endif
 	if (host->card_always_on && is_card_sdio(host->sdhci->mmc->card)) {
 		int ret = 0;
@@ -394,9 +451,12 @@ static int tegra_sdhci_resume(struct platform_device *pdev)
 		return 0;
 	}
 
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA)
-	if (plat->power_gpio != -1)
-		gpio_set_value(plat->power_gpio, 1);
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
+	if (plat->power_gpio != -1) {
+		if ((host->card_present == 1) && (gpio_get_value(host->cd_gpio) == host->cd_gpio_polarity)) {
+			gpio_set_value(plat->power_gpio, 1);
+		}
+	}
 #endif
 	tegra_sdhci_enable_clock(host, 1);
 
@@ -407,6 +467,18 @@ static int tegra_sdhci_resume(struct platform_device *pdev)
 	ret = sdhci_resume_host(host->sdhci);
 	if (ret)
 		pr_err("%s: failed, error = %d\n", __func__, ret);
+
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E)
+	if (host->cd_gpio != -1) {
+		if ((gpio_get_value(host->cd_gpio) == host->cd_gpio_polarity) && (host->card_present == false)) {
+			printk(KERN_INFO "%s was inserted in suspend mode !!\n", mmc_hostname(sdhost->mmc));
+			host->card_present =
+				(gpio_get_value(host->cd_gpio) == host->cd_gpio_polarity);
+			gpio_set_value(plat->power_gpio, 1);
+			tasklet_schedule(&sdhost->card_tasklet);
+		}
+	}
+#endif
 
 	return ret;
 }

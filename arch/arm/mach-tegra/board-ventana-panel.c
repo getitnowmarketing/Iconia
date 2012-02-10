@@ -40,14 +40,19 @@
 #define ventana_pnl_pwr_enb	TEGRA_GPIO_PC6
 #define ventana_bl_enb		TEGRA_GPIO_PD4
 #define ventana_lvds_shutdown	TEGRA_GPIO_PB2
+#if defined(CONFIG_TEGRA_HDMI)
 #define ventana_hdmi_hpd	TEGRA_GPIO_PN7
 #if defined(CONFIG_MACH_VENTANA)
 #define ventana_hdmi_enb	TEGRA_GPIO_PV5
 #endif
+#endif
 
+#if defined(CONFIG_TEGRA_HDMI)
 static struct regulator *ventana_hdmi_reg = NULL;
 static struct regulator *ventana_hdmi_pll = NULL;
+#endif
 
+extern char target_product[20];
 
 static int ventana_backlight_init(struct device *dev) {
 	int ret;
@@ -73,7 +78,19 @@ static void ventana_backlight_exit(struct device *dev) {
 
 static int ventana_backlight_notify(struct device *unused, int brightness)
 {
+#if defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+	static int ori_brightness = 0;
+
+	if (ori_brightness != !!brightness) {
+		if (!ori_brightness)
+			msleep(200);
+		gpio_set_value(ventana_bl_enb, !!brightness);
+	}
+
+	ori_brightness = !!brightness;
+#else
 	gpio_set_value(ventana_bl_enb, !!brightness);
+#endif
 	return brightness;
 }
 
@@ -110,7 +127,6 @@ static int ventana_panel_enable(void)
 	gpio_set_value(ventana_lvds_shutdown, 1);
 #endif
 	gpio_set_value(ventana_pnl_pwr_enb, 1);
-	msleep(200);
 #if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
 	gpio_set_value(ventana_lvds_shutdown, 1);
 #endif
@@ -124,6 +140,7 @@ static int ventana_panel_disable(void)
 	return 0;
 }
 
+#if defined(CONFIG_TEGRA_HDMI)
 static int ventana_hdmi_enable(void)
 {
 	if (!ventana_hdmi_reg) {
@@ -156,6 +173,7 @@ static int ventana_hdmi_disable(void)
 	regulator_disable(ventana_hdmi_pll);
 	return 0;
 }
+#endif
 
 static struct resource ventana_disp1_resources[] = {
 	{
@@ -176,6 +194,7 @@ static struct resource ventana_disp1_resources[] = {
 	},
 };
 
+#if defined(CONFIG_TEGRA_HDMI)
 static struct resource ventana_disp2_resources[] = {
 	{
 		.name	= "irq",
@@ -200,6 +219,7 @@ static struct resource ventana_disp2_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 };
+#endif
 
 static struct tegra_dc_mode ventana_panel_modes[] = {
 	{
@@ -245,6 +265,7 @@ static struct tegra_fb_data ventana_fb_data = {
 	.bits_per_pixel	= 32,
 };
 
+#if defined(CONFIG_TEGRA_HDMI)
 static struct tegra_fb_data ventana_hdmi_fb_data = {
 	.win		= 0,
 #if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
@@ -257,6 +278,7 @@ static struct tegra_fb_data ventana_hdmi_fb_data = {
 #endif
 	.bits_per_pixel	= 32,
 };
+#endif
 
 static struct tegra_dc_out ventana_disp1_out = {
 	.type		= TEGRA_DC_OUT_RGB,
@@ -273,6 +295,7 @@ static struct tegra_dc_out ventana_disp1_out = {
 	.disable	= ventana_panel_disable,
 };
 
+#if defined(CONFIG_TEGRA_HDMI)
 static struct tegra_dc_out ventana_disp2_out = {
 	.type		= TEGRA_DC_OUT_HDMI,
 	.flags		= TEGRA_DC_OUT_HOTPLUG_HIGH,
@@ -288,6 +311,7 @@ static struct tegra_dc_out ventana_disp2_out = {
 	.enable		= ventana_hdmi_enable,
 	.disable	= ventana_hdmi_disable,
 };
+#endif
 
 static struct tegra_dc_platform_data ventana_disp1_pdata = {
 	.flags		= TEGRA_DC_FLAG_ENABLED,
@@ -295,11 +319,13 @@ static struct tegra_dc_platform_data ventana_disp1_pdata = {
 	.fb		= &ventana_fb_data,
 };
 
+#if defined(CONFIG_TEGRA_HDMI)
 static struct tegra_dc_platform_data ventana_disp2_pdata = {
 	.flags		= 0,
 	.default_out	= &ventana_disp2_out,
 	.fb		= &ventana_hdmi_fb_data,
 };
+#endif
 
 static struct nvhost_device ventana_disp1_device = {
 	.name		= "tegradc",
@@ -316,6 +342,7 @@ static int ventana_disp1_check_fb(struct device *dev, struct fb_info *info)
 	return info->device == &ventana_disp1_device.dev;
 }
 
+#if defined(CONFIG_TEGRA_HDMI)
 static struct nvhost_device ventana_disp2_device = {
 	.name		= "tegradc",
 	.id		= 1,
@@ -325,6 +352,7 @@ static struct nvhost_device ventana_disp2_device = {
 		.platform_data = &ventana_disp2_pdata,
 	},
 };
+#endif
 
 static struct nvmap_platform_carveout ventana_carveouts[] = {
 	[0] = {
@@ -370,6 +398,10 @@ struct early_suspend ventana_panel_early_suspender;
 static void ventana_panel_early_suspend(struct early_suspend *h)
 {
 	unsigned i;
+#if defined(CONFIG_MACH_ACER_PICASSO_E)
+	gpio_set_value(ventana_bl_enb, 0);
+	msleep(210);
+#endif
 	for (i = 0; i < num_registered_fb; i++)
 		fb_blank(registered_fb[i], FB_BLANK_POWERDOWN);
 }
@@ -394,6 +426,7 @@ int __init ventana_panel_init(void)
 	gpio_request(ventana_lvds_shutdown, "lvds_shdn");
 	gpio_direction_output(ventana_lvds_shutdown, 1);
 	tegra_gpio_enable(ventana_lvds_shutdown);
+#if defined(CONFIG_TEGRA_HDMI)
 #if defined(CONFIG_MACH_VENTANA)
 	tegra_gpio_enable(ventana_hdmi_enb);
 	gpio_request(ventana_hdmi_enb, "hdmi_5v_en");
@@ -403,6 +436,7 @@ int __init ventana_panel_init(void)
 	tegra_gpio_enable(ventana_hdmi_hpd);
 	gpio_request(ventana_hdmi_hpd, "hdmi_hpd");
 	gpio_direction_input(ventana_hdmi_hpd);
+#endif
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	ventana_panel_early_suspender.suspend = ventana_panel_early_suspend;
@@ -423,16 +457,28 @@ int __init ventana_panel_init(void)
 	res->start = tegra_fb_start;
 	res->end = tegra_fb_start + tegra_fb_size - 1;
 
+#if defined(CONFIG_TEGRA_HDMI)
 	res = nvhost_get_resource_byname(&ventana_disp2_device,
 		IORESOURCE_MEM, "fbmem");
 	res->start = tegra_fb2_start;
 	res->end = tegra_fb2_start + tegra_fb2_size - 1;
+#endif
+
+	if (strcmp(target_product , "picasso3g_att") == 0){
+		struct tegra_dc_platform_data* dc_p =
+		(struct tegra_dc_platform_data*) (ventana_disp1_device.dev.platform_data);
+
+		pr_info("[Disp] ATT \n");
+		dc_p->default_out->modes[0].pclk = 66400000;
+	}
 
 	if (!err)
 		err = nvhost_device_register(&ventana_disp1_device);
 
+#if defined(CONFIG_TEGRA_HDMI)
 	if (!err)
 		err = nvhost_device_register(&ventana_disp2_device);
+#endif
 
 	return err;
 }

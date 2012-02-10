@@ -30,7 +30,16 @@
 
 static struct tegra_wired_jack_conf ventana_wr_jack_conf = {
 	.hp_det_n = TEGRA_GPIO_PW2,
-#ifndef MACH_ACER_AUDIO
+#ifdef MACH_ACER_AUDIO
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
+	.en_spkr = WM8903_GP3,
+	.en_fm2018 = WM8903_GP2
+#elif defined(CONFIG_MACH_ACER_VANGOGH)
+	.en_spkr = WM8903_GP1,
+	.en_fm2018 = WM8903_GP2,
+	.en_spkr_mute = WM8903_GP3
+#endif
+#else
 	.en_mic_ext = TEGRA_GPIO_PX1,
 	.en_mic_int = TEGRA_GPIO_PX0,
 	.en_spkr = WM8903_GP3,

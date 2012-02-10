@@ -20,7 +20,7 @@
 #ifndef __SCXLNX_CONN_H__
 #define __SCXLNX_CONN_H__
 
-#include "scxlnx_defs.h"
+#include "tf_defs.h"
 
 /*
  * Returns a pointer to the connection referenced by the

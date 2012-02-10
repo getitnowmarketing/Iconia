@@ -24,6 +24,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/gpio.h>
+#include <mach/audio.h>
 #include <sound/core.h>
 #include <sound/jack.h>
 #include <sound/pcm.h>
@@ -376,16 +377,6 @@ struct wm8903_priv {
 	struct snd_pcm_substream *master_substream;
 	struct snd_pcm_substream *slave_substream;
 
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
-	struct work_struct work;
-	int amp_enable;
-	int amp_status;
-	int amp_event;
-
-	int fm2018_enable;
-	int fm2018_status;
-#endif
-
 #ifdef CONFIG_GPIOLIB
 	struct gpio_chip gpio_chip;
 #endif
@@ -600,9 +591,6 @@ static int wm8903_output_event(struct snd_soc_dapm_widget *w,
 			       struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = w->codec;
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
-	struct wm8903_priv *wm8903 = snd_soc_codec_get_drvdata(codec);
-#endif
 	u16 val;
 	u16 reg;
 	u16 dcs_reg;
@@ -636,21 +624,6 @@ static int wm8903_output_event(struct snd_soc_dapm_widget *w,
 	}
 
 	if (event & SND_SOC_DAPM_PRE_PMU) {
-		if (w->reg == WM8903_POWER_MANAGEMENT_3 && w->shift == 0) {
-			if (wm8903->amp_event == 1) { /* playback on */
-				if (wm8903->amp_status == 0) {
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
-					snd_soc_write(codec, WM8903_GPIO_CONTROL_3, 0x10);
-#elif defined(CONFIG_MACH_ACER_VANGOGH)
-					snd_soc_write(codec, WM8903_GPIO_CONTROL_1, 0x10);
-					snd_soc_write(codec, WM8903_GPIO_CONTROL_3, 0x0);
-#endif
-					wm8903->amp_status = 1;
-				}
-			} else {
-				wm8903->amp_enable = 1;
-			}
-		}
 		val = snd_soc_read(codec, reg);
 
 		/* Short the output */
@@ -682,20 +655,6 @@ static int wm8903_output_event(struct snd_soc_dapm_widget *w,
 	}
 
 	if (event & SND_SOC_DAPM_PRE_PMD) {
-		if (w->reg == WM8903_POWER_MANAGEMENT_3 && w->shift == 1) {
-			if (wm8903->amp_event == 1) { /* playback off */
-				if (wm8903->amp_status == 1) {
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
-					snd_soc_write(codec, WM8903_GPIO_CONTROL_3, 0);
-#elif defined(CONFIG_MACH_ACER_VANGOGH)
-					snd_soc_write(codec, WM8903_GPIO_CONTROL_3, 0x10);
-#endif
-					wm8903->amp_status = 0;
-				}
-			} else {
-				wm8903->amp_enable = 0;
-			}
-		}
 		val = snd_soc_read(codec, reg);
 
 		/* Short the output */
@@ -1258,21 +1217,20 @@ static int wm8903_set_bias_level(struct snd_soc_codec *codec,
 
 	case SND_SOC_BIAS_STANDBY:
 		if (codec->bias_level == SND_SOC_BIAS_OFF) {
-#ifdef CONFIG_MACH_ACER_VANGOGH
-			snd_soc_write(codec, WM8903_GPIO_CONTROL_3, 0x10);
-			snd_soc_write(codec, WM8903_GPIO_CONTROL_1, 0x10);
-#endif
 			snd_soc_write(codec, WM8903_CLOCK_RATES_2,
 				     WM8903_CLK_SYS_ENA);
 
+#ifndef MACH_ACER_AUDIO
 			/* Change DC servo dither level in startup sequence */
 			snd_soc_write(codec, WM8903_WRITE_SEQUENCER_0, 0x11);
 			snd_soc_write(codec, WM8903_WRITE_SEQUENCER_1, 0x1257);
 			snd_soc_write(codec, WM8903_WRITE_SEQUENCER_2, 0x2);
+#endif
 
 			wm8903_run_sequence(codec, 0);
 			wm8903_sync_reg_cache(codec, codec->reg_cache);
 
+#ifndef MACH_ACER_AUDIO
 			/* Enable low impedence charge pump output */
 			reg = snd_soc_read(codec,
 					  WM8903_CONTROL_INTERFACE_TEST_1);
@@ -1283,6 +1241,7 @@ static int wm8903_set_bias_level(struct snd_soc_codec *codec,
 				     reg2 | WM8903_CP_SW_KELVIN_MODE_MASK);
 			snd_soc_write(codec, WM8903_CONTROL_INTERFACE_TEST_1,
 				     reg);
+#endif
 
 			/* By default no bypass paths are enabled so
 			 * enable Class W support.
@@ -1290,6 +1249,15 @@ static int wm8903_set_bias_level(struct snd_soc_codec *codec,
 			dev_dbg(&i2c->dev, "Enabling Class W\n");
 			snd_soc_write(codec, WM8903_CLASS_W_0, reg |
 				     WM8903_CP_DYN_FREQ | WM8903_CP_DYN_V);
+
+#ifdef MACH_ACER_AUDIO
+		/* Disable unnecessary power and charge pump */
+		snd_soc_write(codec, WM8903_POWER_MANAGEMENT_1, 0);
+		snd_soc_write(codec, WM8903_POWER_MANAGEMENT_2, 0);
+		snd_soc_write(codec, WM8903_POWER_MANAGEMENT_3, 0);
+		snd_soc_write(codec, WM8903_POWER_MANAGEMENT_6, 0);
+		snd_soc_write(codec, WM8903_CHARGE_PUMP_0, 0);
+#endif
 		}
 
 		reg = snd_soc_read(codec, WM8903_VMID_CONTROL_0);
@@ -1299,10 +1267,6 @@ static int wm8903_set_bias_level(struct snd_soc_codec *codec,
 		break;
 
 	case SND_SOC_BIAS_OFF:
-#ifdef CONFIG_MACH_ACER_VANGOGH
-		snd_soc_write(codec, WM8903_GPIO_CONTROL_3, 0x10);
-		snd_soc_write(codec, WM8903_GPIO_CONTROL_1, 0x0);
-#endif
 		wm8903_run_sequence(codec, 32);
 
 		snd_soc_write(codec, WM8903_VMID_CONTROL_0, 0x0);
@@ -1545,88 +1509,6 @@ static struct {
 	{ 96000, 10 },
 	{ 0,      0 },
 };
-
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
-extern int wired_jack_state(void);
-static int wm8903_trigger(struct snd_pcm_substream *substream,
-                              int cmd, struct snd_soc_dai *codec_dai)
-{
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_device *socdev = rtd->socdev;
-	struct snd_soc_codec *codec = socdev->card->codec;
-	struct wm8903_priv *wm8903 = snd_soc_codec_get_drvdata(codec);
-
-	switch (cmd) {
-		case SNDRV_PCM_TRIGGER_START:
-		case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
-		case SNDRV_PCM_TRIGGER_RESUME:
-			if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-				wm8903->amp_event = 1;
-				schedule_work(&wm8903->work);
-			}
-
-			if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
-				wm8903->fm2018_enable = 1;
-				schedule_work(&wm8903->work);
-			}
-			break;
-		case SNDRV_PCM_TRIGGER_STOP:
-		case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
-		case SNDRV_PCM_TRIGGER_SUSPEND:
-			if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-				wm8903->amp_event = 0;
-				schedule_work(&wm8903->work);
-			}
-
-			if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
-				wm8903->fm2018_enable = 0;
-				schedule_work(&wm8903->work);
-			}
-			break;
-        }
-	return 0;
-}
-
-static void wm8903_amp_fm2018_work(struct work_struct *work)
-{
-	struct wm8903_priv *wm8903 = \
-		container_of(work, struct wm8903_priv, work);
-
-	if (wm8903->amp_event == 1) {
-		if (wm8903->amp_enable == 1) {
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
-			snd_soc_write(&wm8903->codec, WM8903_GPIO_CONTROL_3, 0x10);
-#elif defined(CONFIG_MACH_ACER_VANGOGH)
-			snd_soc_write(&wm8903->codec, WM8903_GPIO_CONTROL_3, 0x0);
-#endif
-			wm8903->amp_status = 1;
-			pr_info("Speaker Enable !\n");
-		}
-	} else {
-		if (wm8903->amp_status == 1) {
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
-			snd_soc_write(&wm8903->codec, WM8903_GPIO_CONTROL_3, 0x0);
-#elif defined(CONFIG_MACH_ACER_VANGOGH)
-			snd_soc_write(&wm8903->codec, WM8903_GPIO_CONTROL_3, 0x10);
-#endif
-			wm8903->amp_status = 0;
-			pr_info("Speaker Disable !\n");
-		}
-	}
-
-	if ((wm8903->fm2018_enable == 1) && (wm8903->fm2018_status == 0)) {
-		snd_soc_write(&wm8903->codec, WM8903_GPIO_CONTROL_2, 0x10);
-		snd_soc_write(&wm8903->codec, WM8903_MIC_BIAS_CONTROL_0, 0x03);
-		wm8903->fm2018_status = 1;
-		printk("Enable FM2018 !!\n");
-	} else if ((wm8903->fm2018_enable == 0) && (wm8903->fm2018_status == 1)) {
-		snd_soc_write(&wm8903->codec, WM8903_GPIO_CONTROL_2, 0x0);
-		snd_soc_write(&wm8903->codec, WM8903_MIC_BIAS_CONTROL_0, 0x00);
-		wm8903->fm2018_status = 0;
-		printk("Disable FM2018 !!\n");
-	}
-}
-#endif
 
 static int wm8903_startup(struct snd_pcm_substream *substream,
 			  struct snd_soc_dai *dai)
@@ -1988,9 +1870,6 @@ static struct snd_soc_dai_ops wm8903_dai_ops = {
 	.digital_mute	= wm8903_digital_mute,
 	.set_fmt	= wm8903_set_dai_fmt,
 	.set_sysclk	= wm8903_set_dai_sysclk,
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
-	.trigger	= wm8903_trigger,
-#endif
 };
 
 struct snd_soc_dai wm8903_dai = {
@@ -2170,26 +2049,13 @@ static __devinit int wm8903_i2c_probe(struct i2c_client *i2c,
 
 	val = snd_soc_read(codec, WM8903_ANALOGUE_OUT1_LEFT);
 	val |= WM8903_HPOUTVU;
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
-	snd_soc_write(codec, WM8903_ANALOGUE_OUT1_LEFT, 0xB8);
-	snd_soc_write(codec, WM8903_ANALOGUE_OUT1_RIGHT, 0xB8);
-#else
 	snd_soc_write(codec, WM8903_ANALOGUE_OUT1_LEFT, val);
 	snd_soc_write(codec, WM8903_ANALOGUE_OUT1_RIGHT, val);
-#endif
 
 	val = snd_soc_read(codec, WM8903_ANALOGUE_OUT2_LEFT);
 	val |= WM8903_LINEOUTVU;
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA)
-	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_LEFT, 0xB7);
-	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_RIGHT, 0xB7);
-#elif defined(CONFIG_MACH_ACER_VANGOGH)
-	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_LEFT, 0xB3);
-	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_RIGHT, 0xB3);
-#else
 	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_LEFT, val);
 	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_RIGHT, val);
-#endif
 
 	val = snd_soc_read(codec, WM8903_ANALOGUE_OUT3_LEFT);
 	val |= WM8903_SPKVU;
@@ -2217,22 +2083,6 @@ static __devinit int wm8903_i2c_probe(struct i2c_client *i2c,
 		dev_err(&i2c->dev, "Failed to register DAI: %d\n", ret);
 		goto err_codec;
 	}
-
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH)
-	INIT_WORK(&wm8903->work, wm8903_amp_fm2018_work);
-	wm8903->amp_enable = 0;
-	wm8903->amp_status = 0;
-	wm8903->amp_event  = 0;
-
-	wm8903->fm2018_enable = 0;
-	wm8903->fm2018_status = 0;
-
-	snd_soc_write(codec, WM8903_GPIO_CONTROL_3, 0);
-	snd_soc_read(codec, WM8903_GPIO_CONTROL_3);
-	snd_soc_write(codec, WM8903_GPIO_CONTROL_2, 0x0);// for power saving
-	snd_soc_read(codec, WM8903_GPIO_CONTROL_2);
-	snd_soc_write(codec, WM8903_MIC_BIAS_CONTROL_0, 0x00);
-#endif
 
 	return ret;
 

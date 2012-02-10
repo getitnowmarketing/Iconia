@@ -85,7 +85,7 @@ unsigned long tegra_grhost_aperture;
 static   bool is_tegra_debug_uart_hsport;
 static   int  uart_mode = -1;
 char acer_brand[20];
-
+char target_product[20];
 extern void SysRestart(void );
 
 static struct board_info tegra_board_info = {
@@ -307,6 +307,14 @@ static int __init brand_arg(char *options)
 	return 0;
 }
 early_param("brand", brand_arg);
+
+static int __init target_product_arg(char *options)
+{
+	memcpy(target_product, options, strlen(options));
+
+	return 0;
+}
+early_param("target_product", target_product_arg);
 
 static int __init tegra_board_info_parse(char *info)
 {

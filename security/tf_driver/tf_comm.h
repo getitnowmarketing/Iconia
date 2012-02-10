@@ -20,8 +20,8 @@
 #ifndef __SCXLNX_COMM_H__
 #define __SCXLNX_COMM_H__
 
-#include "scxlnx_defs.h"
-#include "scx_protocol.h"
+#include "tf_defs.h"
+#include "tf_protocol.h"
 
 /*----------------------------------------------------------------------------
  * Misc

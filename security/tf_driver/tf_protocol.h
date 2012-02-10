@@ -333,11 +333,10 @@ union SCX_ANSWER_PARAM {
 
 
 /*
- * The error codes
+ * The SChannel error codes.
  */
-#define S_SUCCESS						0x00000000
-#define S_ERROR_NO_DATA				0xFFFF000B
-#define S_ERROR_OUT_OF_MEMORY		0xFFFF000C
+#define S_SUCCESS 0x00000000
+#define S_ERROR_OUT_OF_MEMORY 0xFFFF000C
 
 
 struct SCX_COMMAND_HEADER {

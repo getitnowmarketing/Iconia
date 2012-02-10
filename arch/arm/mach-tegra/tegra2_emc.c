@@ -199,7 +199,7 @@ int tegra_emc_set_rate(unsigned long rate)
 	return 0;
 }
 
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_PICASSO_E) || defined(CONFIG_MACH_ACER_VANGOGH2)
 void tegra_init_emc(const struct tegra_emc_table *table, int table_size)
 {
 	tegra_emc_table = table;

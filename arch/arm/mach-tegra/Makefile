@@ -109,3 +109,23 @@ obj-${CONFIG_MACH_ACER_VANGOGH}              += board-ventana-jack.o
 obj-${CONFIG_MACH_ACER_VANGOGH}              += board-ventana-sensors.o
 obj-${CONFIG_MACH_ACER_VANGOGH}              += board-ventana-kbc.o
 obj-${CONFIG_MACH_ACER_VANGOGH}              += board-ventana-memory.o
+
+obj-${CONFIG_MACH_ACER_PICASSO_E}              += board-ventana.o
+obj-${CONFIG_MACH_ACER_PICASSO_E}              += board-ventana-pinmux.o
+obj-${CONFIG_MACH_ACER_PICASSO_E}              += board-ventana-sdhci.o
+obj-${CONFIG_MACH_ACER_PICASSO_E}              += board-ventana-power.o
+obj-${CONFIG_MACH_ACER_PICASSO_E}              += board-ventana-panel.o
+obj-${CONFIG_MACH_ACER_PICASSO_E}              += board-ventana-jack.o
+obj-${CONFIG_MACH_ACER_PICASSO_E}              += board-ventana-sensors.o
+obj-${CONFIG_MACH_ACER_PICASSO_E}              += board-ventana-kbc.o
+obj-${CONFIG_MACH_ACER_PICASSO_E}              += board-ventana-memory.o
+
+obj-${CONFIG_MACH_ACER_VANGOGH2}              += board-ventana.o
+obj-${CONFIG_MACH_ACER_VANGOGH2}              += board-ventana-pinmux.o
+obj-${CONFIG_MACH_ACER_VANGOGH2}              += board-ventana-sdhci.o
+obj-${CONFIG_MACH_ACER_VANGOGH2}              += board-ventana-power.o
+obj-${CONFIG_MACH_ACER_VANGOGH2}              += board-ventana-panel.o
+obj-${CONFIG_MACH_ACER_VANGOGH2}              += board-ventana-jack.o
+obj-${CONFIG_MACH_ACER_VANGOGH2}              += board-ventana-sensors.o
+obj-${CONFIG_MACH_ACER_VANGOGH2}              += board-ventana-kbc.o
+obj-${CONFIG_MACH_ACER_VANGOGH2}              += board-ventana-memory.o

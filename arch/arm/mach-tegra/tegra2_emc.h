@@ -35,7 +35,8 @@ struct tegra_emc_chip {
 
 int tegra_emc_set_rate(unsigned long rate);
 long tegra_emc_round_rate(unsigned long rate);
-#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_MAYA) \
+    || defined(CONFIG_MACH_ACER_VANGOGH2)
 void tegra_init_emc(const struct tegra_emc_table *table, int table_size);
 #else
 void tegra_init_emc(const struct tegra_emc_chip *chips, int chips_size);

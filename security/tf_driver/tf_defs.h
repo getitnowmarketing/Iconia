@@ -35,7 +35,7 @@
 #include <linux/wakelock.h>
 #endif
 
-#include "scx_protocol.h"
+#include "tf_protocol.h"
 
 /*----------------------------------------------------------------------------*/
 
@@ -301,6 +301,10 @@ struct SCXLNX_DEVICE {
 	 */
 	struct cdev cdev;
 
+#ifdef CONFIG_TF_TEEC
+	struct cdev cdev_teec;
+#endif
+
 #ifdef CONFIG_TF_ZEBRA
 	struct cdev cdev_ctrl;
 
@@ -407,6 +411,18 @@ enum SCXLNX_COMMAND_STATE {
 	SCXLNX_COMMAND_STATE_ABORTED
 };
 
+/*
+ * The origin of connection parameters such as login data and
+ * memory reference pointers.
+ *
+ * PROCESS: the calling process. All arguments must be validated.
+ * KERNEL: kernel code. All arguments can be trusted by this driver.
+ */
+enum SCXLNX_CONNECTION_OWNER {
+	SCXLNX_CONNECTION_OWNER_PROCESS = 0,
+	SCXLNX_CONNECTION_OWNER_KERNEL,
+};
+
 
 /*
  * This structure describes a connection to the driver
@@ -477,6 +493,10 @@ struct SCXLNX_CONNECTION {
 	 * coarse page table allocation context
 	 */
 	struct SCXLNX_COARSE_PAGE_TABLE_ALLOCATION_CONTEXT sAllocationContext;
+
+	/* The origin of connection parameters such as login data and
+	   memory reference pointers. */
+	enum SCXLNX_CONNECTION_OWNER nOwner;
 
 #ifdef CONFIG_TF_ZEBRA
 	/* Lists all the Cryptoki Update Shortcuts */

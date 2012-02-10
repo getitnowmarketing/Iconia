@@ -24,6 +24,10 @@
 #include <linux/gpio.h>
 #include <mach/suspend.h>
 #include <linux/io.h>
+#if defined(CONFIG_MACH_ACER_PICASSO_E) || defined(CONFIG_MACH_ACER_VANGOGH)
+#include <linux/regulator/consumer.h>
+#include <linux/err.h>
+#endif
 
 #include <mach/iomap.h>
 #include <mach/irqs.h>
@@ -49,6 +53,30 @@
 #define GPIO_DISABLE	0
 #define GPIO_OUTPUT	1
 #define GPIO_INPUT	0
+#endif
+
+#if defined(CONFIG_MACH_ACER_PICASSO_E) || defined(CONFIG_MACH_ACER_VANGOGH)
+int enable_1v8_LDO6(void)
+{
+	int ret;
+	struct regulator *dis_ldo6 = NULL;
+
+	dis_ldo6 = regulator_get(NULL, "vdd_ldo6");
+	if (IS_ERR_OR_NULL(dis_ldo6)) {
+		pr_err("%s: Couldn't get LDO6\n",__func__);
+		return 0;
+	}
+
+	ret = regulator_set_voltage(dis_ldo6, 1800*1000, 1800*1000);
+	if (ret) {
+		pr_err("%s: Couldn't set voltage on LDO6\n",__func__);
+	}
+
+	regulator_put(dis_ldo6);
+        return 0;
+}
+
+late_initcall(enable_1v8_LDO6);
 #endif
 
 int __init ventana_charge_init(void)

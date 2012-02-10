@@ -485,6 +485,7 @@ static int tegra_usb_resume(struct usb_hcd *hcd, bool is_dpd)
 	struct ehci_regs __iomem *hw = ehci->regs;
 	unsigned long val;
 	int hsic = 0;
+	unsigned long flags;
 	struct tegra_ulpi_config *config;
 
 	if (tegra->phy->instance == 1) {
@@ -519,9 +520,12 @@ static int tegra_usb_resume(struct usb_hcd *hcd, bool is_dpd)
 		if( tegra->phy->instance == 2) {
 			if (tegra->port_speed > TEGRA_USB_PHY_PORT_SPEED_HIGH)
 				goto no_device1;
-			tegra_ehci_phy_restore_start(tegra->phy, tegra->port_speed);
+			else {
+				spin_lock_irqsave(&tegra->ehci->lock, flags);
+				tegra->port_speed = (readl(&hw->port_status[0]) >> 26) & 0x3;
+				spin_unlock_irqrestore(&tegra->ehci->lock, flags);
+			}
 		}
-
 		/* Program the field PTC in PORTSC based on the saved speed mode */
 		val = readl(&hw->port_status[0]);
 		val &= ~(TEGRA_USB_PORTSC1_PTC(~0));

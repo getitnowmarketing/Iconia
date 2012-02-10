@@ -28,14 +28,14 @@
 #include <linux/jiffies.h>
 #include <linux/freezer.h>
 
-#include "scxlnx_defs.h"
-#include "scxlnx_comm.h"
-#include "scx_protocol.h"
-#include "scxlnx_util.h"
-#include "scxlnx_conn.h"
+#include "tf_defs.h"
+#include "tf_comm.h"
+#include "tf_protocol.h"
+#include "tf_util.h"
+#include "tf_conn.h"
 
 #ifdef CONFIG_TF_ZEBRA
-#include "scxlnx_zebra.h"
+#include "tf_zebra.h"
 #endif
 
 /*---------------------------------------------------------------------------
@@ -184,8 +184,8 @@ struct SCXLNX_COARSE_PAGE_TABLE *SCXLNXAllocateCoarsePageTable(
 		 * The free list can provide us a coarse page table
 		 * descriptor
 		 */
-		pCoarsePageTable = list_entry(
-				pAllocationContext->sFreeCoarsePageTables.next,
+		pCoarsePageTable = list_first_entry(
+				&pAllocationContext->sFreeCoarsePageTables,
 				struct SCXLNX_COARSE_PAGE_TABLE, list);
 		list_del(&(pCoarsePageTable->list));
 
@@ -351,8 +351,8 @@ void SCXLNXReleaseCoarsePageTableAllocator(
 		struct SCXLNX_COARSE_PAGE_TABLE_ARRAY *pPageDesc;
 		u32 *pDescriptors;
 
-		pPageDesc = list_entry(
-			pAllocationContext->sCoarsePageTableArrays.next,
+		pPageDesc = list_first_entry(
+			&pAllocationContext->sCoarsePageTableArrays,
 			struct SCXLNX_COARSE_PAGE_TABLE_ARRAY, list);
 
 		pDescriptors = pPageDesc->sCoarsePageTables[0].pDescriptors;
@@ -1242,7 +1242,7 @@ copy_answers:
 				STATUS_PENDING)
 				goto copy_answers;
 
-			tf_l4sec_clkdm_allow_idle(true, true);
+			tf_l4sec_clkdm_allow_idle(true);
 			*secure_is_idle = true;
 		}
 #endif
@@ -1353,7 +1353,7 @@ copy_answers:
 #ifdef CONFIG_TF_ZEBRA
 schedule_secure_world:
 	if (*secure_is_idle) {
-		tf_l4sec_clkdm_wakeup(true, true);
+		tf_l4sec_clkdm_wakeup(true);
 		*secure_is_idle = false;
 	}
 #endif
@@ -1392,7 +1392,7 @@ wait:
 			wait_prepared = false;
 			goto copy_answers;
 		}
-		tf_l4sec_clkdm_allow_idle(true, true);
+		tf_l4sec_clkdm_allow_idle(true);
 		*secure_is_idle = true;
 	}
 #endif
@@ -1420,7 +1420,7 @@ exit:
 		if (tf_schedule_secure_world(pComm, true) == STATUS_PENDING)
 			goto copy_answers;
 
-		tf_l4sec_clkdm_allow_idle(true, true);
+		tf_l4sec_clkdm_allow_idle(true);
 		*secure_is_idle = true;
 	}
 #endif

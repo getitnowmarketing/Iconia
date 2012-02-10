@@ -109,5 +109,11 @@ config TEGRA_DSI
 	default n
 	help
 	  Say Y here to enable the DSI panel.
+
+config TEGRA_HDMI
+	bool "Enable HDMI"
+	default n
+	help
+	  Say Y here to Enable HDMI.
 endif
 

@@ -605,12 +605,20 @@ static bool tegra_dc_hdmi_detect(struct tegra_dc *dc)
 {
 	struct tegra_dc_hdmi_data *hdmi = tegra_dc_get_outdata(dc);
 	struct fb_monspecs specs;
-	int err;
+	int err, i;
 
 	if (!tegra_dc_hdmi_hpd(dc))
 		goto fail;
 
-	err = tegra_edid_get_monspecs(hdmi->edid, &specs);
+	for (i = 0; i < 7; i++) {
+		err = tegra_edid_get_monspecs(hdmi->edid, &specs);
+		if (err >= 0) {
+			break;
+		} else if (i < 6) {
+			pr_err("failed to read edid, wait 50ms and try again...\n");
+			mdelay(50);
+		}
+	}
 	if (err < 0) {
 		dev_err(&dc->ndev->dev, "error reading edid\n");
 		goto fail;
@@ -688,10 +696,14 @@ static void tegra_dc_hdmi_resume(struct tegra_dc *dc)
 {
 	struct tegra_dc_hdmi_data *hdmi = tegra_dc_get_outdata(dc);
 	unsigned long flags;
+	bool need_check = false;
 
 	spin_lock_irqsave(&hdmi->suspend_lock, flags);
 	hdmi->suspended = false;
-	if (hdmi->hpd_pending) {
+	if (gpio_get_value(dc->out->hotplug_gpio) != switch_get_state(&hdmi->hpd_switch)) {
+		need_check = true;
+	}
+	if (hdmi->hpd_pending || need_check) {
 		if (tegra_dc_hdmi_hpd(dc))
 			queue_delayed_work(system_nrt_wq, &hdmi->work,
 					   msecs_to_jiffies(100));

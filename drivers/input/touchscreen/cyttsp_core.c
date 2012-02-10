@@ -79,7 +79,8 @@
 #define CY_REG_TCH_TMOUT            (CY_REG_ACT_INTRVL+1)
 #define CY_REG_LP_INTRVL            (CY_REG_TCH_TMOUT+1)
 #define CY_MAXZ                     255
-#define CY_DELAY_DFLT               200 /* ms */
+#define CY_DELAY_DFLT               20   /* ms */
+#define CY_DELAY_DLFW               200  /* ms */
 #define CY_DELAY_MAX                (500/CY_DELAY_DFLT) /* half second */
 #define CY_ACT_DIST_DFLT            0xF8
 #define CY_HNDSHK_BIT               0x80
@@ -277,6 +278,27 @@ static int ttsp_write_block_data(struct cyttsp *ts, u16 command,
 	return retval;
 }
 
+static int ttsp_fw_write_block_data(struct cyttsp *ts, u16 command,
+	u8 length, void *buf, int i2c_addr, bool use_long_subaddr)
+{
+	int retval;
+	int tries;
+
+	if (!buf || !length)
+		return -EIO;
+
+	for (tries = 0, retval = -1;
+		tries < CY_NUM_RETRY && (retval < 0);
+		tries++) {
+		retval = ts->bus_ops->write(ts->bus_ops, command, length, buf,
+			i2c_addr, use_long_subaddr);
+		if (retval)
+			msleep(CY_DELAY_DLFW);
+	}
+
+	return retval;
+}
+
 static int ttsp_tch_ext(struct cyttsp *ts, void *buf)
 {
 	int retval;
@@ -312,7 +334,7 @@ static int cyttsp_exit_bl_mode(struct cyttsp *ts)
 	tries = 0;
 	do {
 		mdelay(CY_DELAY_DFLT);
-		retval = ttsp_write_block_data(ts, CY_REG_BASE,
+		retval = ttsp_fw_write_block_data(ts, CY_REG_BASE,
 			sizeof(exit_bl_cmd), (u8 *)exit_bl_cmd, 0x6A, false);
 	} while ((retval < 0) && (tries++ < CY_DELAY_MAX));
 
@@ -329,7 +351,7 @@ static void cyttsp_set_operational_mode(struct cyttsp *ts)
 	int retval;
 	u8 cmd = CY_OPERATE_MODE;
 
-	retval = ttsp_write_block_data(ts, CY_REG_BASE,
+	retval = ttsp_fw_write_block_data(ts, CY_REG_BASE,
 		sizeof(cmd), &cmd, 0x67, true);
 
 	if (retval < 0)

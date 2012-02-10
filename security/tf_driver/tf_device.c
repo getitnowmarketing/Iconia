@@ -31,14 +31,14 @@
 #include <linux/device.h>
 #endif
 
-#include "scx_protocol.h"
-#include "scxlnx_defs.h"
-#include "scxlnx_util.h"
-#include "scxlnx_conn.h"
-#include "scxlnx_comm.h"
+#include "tf_protocol.h"
+#include "tf_defs.h"
+#include "tf_util.h"
+#include "tf_conn.h"
+#include "tf_comm.h"
 #ifdef CONFIG_TF_ZEBRA
 #include <plat/cpu.h>
-#include "scxlnx_zebra.h"
+#include "tf_zebra.h"
 #endif
 
 #include "s_version.h"
@@ -401,13 +401,6 @@ static int SCXLNXDeviceOpen(struct inode *inode, struct file *file)
 		goto error;
 	}
 
-	/*
-	 * Attach the connection to the device.
-	 */
-	spin_lock(&(pDevice->connsLock));
-	list_add(&(pConn->list), &(pDevice->conns));
-	spin_unlock(&(pDevice->connsLock));
-
 	file->private_data = pConn;
 
 	/*
@@ -451,9 +444,6 @@ static int SCXLNXDeviceRelease(struct inode *inode, struct file *file)
 		imajor(inode), iminor(inode), file);
 
 	pConn = SCXLNXConnFromFile(file);
-	spin_lock(&g_SCXLNXDevice.connsLock);
-	list_del(&pConn->list);
-	spin_unlock(&g_SCXLNXDevice.connsLock);
 	SCXLNXConnClose(pConn);
 
 	dprintk(KERN_INFO "SCXLNXDeviceRelease(%p): Success\n", file);
@@ -674,7 +664,7 @@ static int SCXLNXDeviceShutdown(struct sys_device *sysdev)
 
 static int SCXLNXDeviceSuspend(struct sys_device *sysdev, pm_message_t state)
 {
-	printk(KERN_INFO "SCXLNXDeviceSuspend: Enter\n");
+	dprintk(KERN_INFO "SCXLNXDeviceSuspend: Enter\n");
 	return SCXLNXCommPowerManagement(&g_SCXLNXDevice.sm,
 		SCXLNX_POWER_OPERATION_HIBERNATE);
 }
