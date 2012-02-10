@@ -85,8 +85,8 @@ extern unsigned int total_ram_size ;
 extern char acer_brand[20];
 
 static struct usb_mass_storage_platform_data tegra_usb_fsg_platform = {
-	.vendor = "NVIDIA",
-	.product = "Tegra 2",
+	.vendor = "ACER",
+	.product = "PICASSO",
 	.nluns = 1,
 };
 
@@ -295,6 +295,8 @@ static __initdata struct tegra_clk_init_table ventana_clk_init_table[] = {
 #define USB_PID_PICA_3G_MTP		0x3345
 #define USB_PID_PICA_3G_RNDIS_ADB	0x3346
 #define USB_PID_PICA_3G_RNDIS		0x3347
+#define USB_PID_PICA_WIFI_MS_ADB  0x335E
+#define USB_PID_PICA_WIFI_MS    0x335F
 
 #define USB_PID_PICAE_WIFI_MTP_ADB	0x337C
 #define USB_PID_PICAE_WIFI_MTP		0x337D
@@ -348,6 +350,10 @@ static char *usb_functions_rndis_adb[] = { "rndis", "adb" };
 static char *usb_functions_accessory[] = { "accessory"};
 static char *usb_functions_accessory_adb[] = { "accessory", "adb"};
 #endif
+#ifdef CONFIG_USB_ANDROID_MASS_STORAGE
+static char *usb_functions_ms[] = { "usb_mass_storage" };
+static char *usb_functions_ms_adb[] = { "usb_mass_storage", "adb" };
+#endif
 static char *usb_functions_all[] = {
 #ifdef CONFIG_USB_ANDROID_RNDIS
 	"rndis",
@@ -357,6 +363,9 @@ static char *usb_functions_all[] = {
 #endif
 #ifdef CONFIG_USB_ANDROID_MTP
 	"mtp",
+#endif
+#ifdef CONFIG_USB_ANDROID_MASS_STORAGE
+ 	 "usb_mass_storage",
 #endif
 	"adb"
 };
@@ -397,6 +406,18 @@ static struct android_usb_product usb_products[] = {
 		.num_functions  = ARRAY_SIZE(usb_functions_accessory_adb),
 		.functions      = usb_functions_accessory_adb,
 	},
+#endif
+#ifdef CONFIG_USB_ANDROID_MASS_STORAGE
+  {
+    .product_id     = USB_PID_PICA_WIFI_MS,
+    .num_functions  = ARRAY_SIZE(usb_functions_ms),
+    .functions      = usb_functions_ms,
+  },
+  {
+    .product_id     = USB_PID_PICA_WIFI_MS_ADB,
+    .num_functions  = ARRAY_SIZE(usb_functions_ms_adb),
+    .functions      = usb_functions_ms_adb,
+  },
 #endif
 };
 
