@@ -1569,6 +1569,7 @@ send_wakeset_cmd:
 			for(timeout = 0; timeout < 10; timeout++) {
 				msleep(100);
 				len = fp->f_op->read(fp, buffer, 128, &fp->f_pos);
+				buffer[len] = '\0';
 #ifdef DEBUG2
 				dbg2("ACM%d rsp len=%d timeout=%d", acm->minor, len, timeout);
 #else

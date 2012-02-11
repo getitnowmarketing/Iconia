@@ -216,6 +216,10 @@ static void usb_wwan_indat_callback(struct urb *urb)
 		    __func__, status, endpoint);
 	} else {
 		tty = tty_port_tty_get(&port->port);
+		if (tty == NULL) {
+			printk(KERN_INFO "usb_wwan_indat_callback, tty is null\n");
+			return;
+		}
 		if (urb->actual_length) {
 			tty_insert_flip_string(tty, data, urb->actual_length);
 			tty_flip_buffer_push(tty);
