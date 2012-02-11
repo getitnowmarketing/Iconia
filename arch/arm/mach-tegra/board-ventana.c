@@ -83,8 +83,8 @@ extern unsigned int total_ram_size ;
 extern char acer_brand[20];
 
 static struct usb_mass_storage_platform_data tegra_usb_fsg_platform = {
-	.vendor = "NVIDIA",
-	.product = "Tegra 2",
+	.vendor = "ACER",
+	.product = "PICASSO",
 	.nluns = 1,
 };
 
@@ -425,8 +425,13 @@ static struct wm8903_platform_data wm8903_pdata = {
 	.micdet_delay = 0,
 	.gpio_base = WM8903_GPIO_BASE,
 	.gpio_cfg = {
+#if defined(MACH_ACER_AUDIO)
+		WM8903_GPn_FN_GPIO_OUTPUT,
+		WM8903_GPn_FN_GPIO_OUTPUT,
+#else
 		WM8903_GPIO_NO_CONFIG,
 		WM8903_GPIO_NO_CONFIG,
+#endif
 		0,                     /* as output pin */
 		WM8903_GPn_FN_GPIO_MICBIAS_CURRENT_DETECT
 		<< WM8903_GP4_FN_SHIFT, /* as micbias current detect */
@@ -698,9 +703,13 @@ static int ventana_wakeup_key(void)
 {
 	unsigned long status =
 		readl(IO_ADDRESS(TEGRA_PMC_BASE) + PMC_WAKE_STATUS);
+	int clr_key_pwr = 0x100;
 
 #if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || \
     defined(CONFIG_MACH_ACER_VANGOGH)
+
+	writel(clr_key_pwr, IO_ADDRESS(TEGRA_PMC_BASE) + PMC_WAKE_STATUS);
+
 	return status & TEGRA_WAKE_GPIO_PC7 ? KEY_POWER : KEY_RESERVED;
 #else
 	return status & TEGRA_WAKE_GPIO_PV2 ? KEY_POWER : KEY_RESERVED;

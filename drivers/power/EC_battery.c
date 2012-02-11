@@ -34,7 +34,7 @@
 #include <linux/interrupt.h>
 
 #define NVBATTERY_POLLING_INTERVAL 30000 /* 30 Seconds */
-#define ECBATTERY_RESUME_INTERVAL 500 /* 0.5 Seconds */
+#define ECBATTERY_RESUME_INTERVAL 1000 /* 1 Seconds */
 
 static enum power_supply_property EC_Bat_properties[] = {
 	POWER_SUPPLY_PROP_STATUS,
@@ -94,6 +94,9 @@ unsigned int batt_status_poll_period;
 int gpio;
 s16 ThreeGPower_val = 2;
 s16 MicSwitch_val = 2;
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+s16 AcousticTable_val = 2;
+#endif
 s16 Coldboot_val = 0;
 s16 Resume_val = 0;
 s16 GPS_val = 0;
@@ -780,24 +783,23 @@ static ssize_t ECflashread_store(struct kobject *kobj, struct kobj_attribute *at
 	return n;
 }
 
-#ifdef CONFIG_MACH_ACER_VANGOGH
-extern void MicSwitch_int(void)
+#if defined(CONFIG_MACH_ACER_PICASSO) || defined(CONFIG_MACH_ACER_MAYA) || defined(CONFIG_MACH_ACER_VANGOGH) || defined(CONFIG_MACH_ACER_PICASSO_E)
+int getAudioTable(void)
 {
-	i2c_smbus_write_word_data(EC_Bat_device->client,0x44,0);
-	msleep(100);
+	return AcousticTable_val;
 }
 
-extern void MicSwitch_ext(void)
+void setAudioTable(int table_value)
 {
-	i2c_smbus_write_word_data(EC_Bat_device->client,0x44,1);
-	msleep(100);
+	AcousticTable_val = table_value;
+	i2c_smbus_write_word_data(EC_Bat_device->client,0x44,table_value);
 }
 #endif
 
 static ssize_t MicSwitch_show(struct kobject *kobj, struct kobj_attribute *attr, char * buf)
 {
 	char * s = buf;
-	s += sprintf(s, "%d\n",MicSwitch_val);
+	s += sprintf(s, "%d\n",AcousticTable_val);
 
 	return (s - buf);
 }
@@ -811,6 +813,8 @@ static ssize_t MicSwitch_store(struct kobject *kobj, struct kobj_attribute *attr
 	int buffer;
 	buffer = atoi(buf);
 	MicSwitch_val = buffer & 0x0000FFFF;
+	AcousticTable_val = MicSwitch_val;
+	printk("MicSwitch value: %d\n", AcousticTable_val);
 	i2c_smbus_write_word_data_retry(EC_Bat_device->client,0x44,MicSwitch_val);
 	msleep(100);
 
@@ -903,6 +907,21 @@ static ssize_t SkuNumber_store(struct kobject *kobj, struct kobj_attribute *attr
 	i2c_smbus_write_word_data_retry(EC_Bat_device->client,0x69,val16);
 	msleep(10);
 
+	return n;
+}
+
+//echo 1 > switchEcAudioTable
+static ssize_t SwitchEcAudioTable_show(struct kobject *kobj, struct kobj_attribute *attr, char * buf)
+{
+	char * s = buf;
+	s += sprintf(s, "SwitchEcAudioTable");
+	return (s - buf);
+}
+
+static ssize_t SwitchEcAudioTable_store(struct kobject *kobj, struct kobj_attribute *attr, const char * buf, size_t n)
+{
+	i2c_smbus_write_word_data_retry(EC_Bat_device->client,0x33,0);
+	msleep(100);
 	return n;
 }
 
@@ -1365,6 +1384,7 @@ debug_attr(MicSwitch);
 debug_attr(ThreeGPower);
 debug_attr(ECflashMode);
 debug_attr(SkuNumber);
+debug_attr(SwitchEcAudioTable);
 debug_attr(LEDAndroidOff);
 debug_attr(ManufactureDate);
 debug_attr(Reset);
@@ -1413,6 +1433,7 @@ static struct attribute * g[] = {
 	&ThreeGPower_attr.attr,
 	&ECflashMode_attr.attr,
 	&SkuNumber_attr.attr,
+	&SwitchEcAudioTable_attr.attr,
 	&LEDAndroidOff_attr.attr,
 	&ManufactureDate_attr.attr,
 	&Reset_attr.attr,

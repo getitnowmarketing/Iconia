@@ -287,7 +287,6 @@ int __init ventana_sdhci_init(void)
 	tegra_gpio_enable(tegra_sdhci_platform_data2.cd_gpio);
 
 	gpio_direction_output(tegra_sdhci_platform_data2.power_gpio, 1);
-	gpio_set_value(tegra_sdhci_platform_data2.power_gpio, 1);
 #else
 	gpio_request(tegra_sdhci_platform_data2.power_gpio, "sdhci2_power");
 	gpio_request(tegra_sdhci_platform_data2.cd_gpio, "sdhci2_cd");
