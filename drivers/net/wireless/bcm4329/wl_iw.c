@@ -59,6 +59,24 @@ typedef const struct si_pub  si_t;
 
 #include <wl_iw.h>
 
+#define WL_PROTECT 1
+#ifdef WL_PROTECT
+#define WL_PROTECT_TIME 10000
+#define WL_MAX_FAIL_COUNT 2
+typedef struct wlp_info {
+        struct timer_list timer;
+        uint32 timer_on;
+	uint32 reset_now;
+        long wlp_pid;
+        struct semaphore wlp_sem;
+        struct completion wlp_exited;
+} wlp_info_t;
+wlp_info_t *g_wl_protect = NULL;
+
+static void wl_iw_protect_timerfunc(ulong data);
+#endif
+//for WL_PROTECT and WL_IW_AUTO_TXPOWER_ADJ
+static int iw_link_state = 0;
 
 
 #ifndef IW_ENCODE_ALG_SM4
@@ -105,6 +123,11 @@ struct semaphore  ap_eth_sema;
 static struct completion ap_cfg_exited;
 static int wl_iw_set_ap_security(struct net_device *dev, struct ap_profile *ap);
 static int wl_iw_softap_deassoc_stations(struct net_device *dev, u8 *mac);
+#endif
+#define WL_IW_AUTO_TXPOWER_ADJ 1
+#ifdef WL_IW_AUTO_TXPOWER_ADJ
+static int iw_link_state_changed = 0;
+static int default_tx_power = 0;
 #endif
 
 #define WL_IW_IOCTL_CALL(func_call) \
@@ -1480,7 +1503,49 @@ exit_proc:
 	return res;
 }
 #endif
+#ifdef WL_IW_AUTO_TXPOWER_ADJ
+typedef enum wifi_link_mode {
+	WIFI_B_MODE = 1,
+	WIFI_G_MODE,
+	WIFI_N_MODE
+} wifi_link_mode_t;
 
+static int
+wl_iw_get_ch_info(struct net_device *dev, int *mode, int *channel)
+{
+	char bi_buf[256];
+	wl_bss_info_t *bi;
+	*(uint32*)bi_buf = htod32(WLC_IOCTL_SMLEN);
+
+	dev_wlc_ioctl(dev, WLC_GET_BSS_INFO, bi_buf,256);
+
+	bi = (wl_bss_info_t*)(bi_buf + 4);
+
+	if (dtoh32(bi->version) != WL_BSS_INFO_VERSION) {
+		WL_ERROR(("can't get bi info!\n"));
+		return -1;
+	}
+
+	/* check the bss info */
+	/* get channel */
+	*channel = (bi->ctl_ch == 0) ? CHSPEC_CHANNEL(bi->chanspec) : bi->ctl_ch;
+	WL_TRACE(("get channel = %d\n", *channel));
+
+	/* get mode b/g/n */
+	if (dtoh32(bi->rateset.count) <= 4) {
+		WL_TRACE(("b only mode\n"));
+		*mode = WIFI_B_MODE;
+	} else if (bi->ctl_ch) {
+		WL_TRACE(("n mode\n"));
+		*mode = WIFI_N_MODE;
+	} else {
+		WL_TRACE(("g mode\n"));
+		*mode = WIFI_G_MODE;
+	}
+
+	return 0;
+}
+#endif
 static int
 wl_iw_get_rssi(
 	struct net_device *dev,
@@ -1525,6 +1590,49 @@ wl_iw_get_rssi(
 	wrqu->data.length = p - extra + 1;
 
 	net_os_wake_unlock(dev);
+#ifdef WL_IW_AUTO_TXPOWER_ADJ
+	/* get default tx power value */
+	if (!default_tx_power) {
+		dev_wlc_intvar_get(dev, "qtxpower", &default_tx_power);
+		WL_ERROR(("default tx power is %d\n", default_tx_power));
+	}
+	if (iw_link_state_changed) {
+		int tw_power_set_value = default_tx_power;
+		int mode = 0;
+		int get_chan = 0;
+		/* check link up or link down */
+		if (iw_link_state == 0) {
+			/* link down, set tx power to default value */
+			tw_power_set_value = default_tx_power;
+		} else {
+			/* link up, check channel */
+			if (wl_iw_get_ch_info(dev, &mode, &get_chan) != 0)
+				goto end;
+
+			if (get_chan == 1) {
+				if (mode == WIFI_G_MODE) {
+					WL_ERROR(("---WIFI_G_MODE channel 1-------\n"));
+					tw_power_set_value = 52;
+				} else if (mode == WIFI_N_MODE) {
+					tw_power_set_value = 52;
+				}
+			} else if (get_chan == 11) {
+				if (mode == WIFI_G_MODE) {
+					WL_ERROR(("---WIFI_G_MODE channel 11-------\n"));
+					tw_power_set_value = 60;
+				} else if (mode == WIFI_N_MODE) {
+					tw_power_set_value = 52;
+				}
+			}
+		}
+
+		WL_ERROR(("----------set tx power to 0x%x\n", tw_power_set_value));
+		tw_power_set_value |= WL_TXPWR_OVERRIDE;
+		dev_wlc_intvar_set(dev, "qtxpower", tw_power_set_value);
+	}
+end:
+	iw_link_state_changed = 0;
+#endif
 	return error;
 }
 
@@ -1548,6 +1656,14 @@ wl_iw_send_priv_event(
 	wireless_send_event(dev, cmd, &wrqu, extra);
 	net_os_wake_lock_timeout_enable(dev);
 	WL_TRACE(("Send IWEVCUSTOM Event as %s\n", extra));
+
+#ifdef WL_PROTECT
+	if ( !strncmp( flag, "HANG", 4) && g_wl_protect ) {
+		g_wl_protect->reset_now = 1;
+		WL_TRACE(("%s: Reset firmware\n", __FUNCTION__));
+		up(&g_wl_protect->wlp_sem);
+	}
+#endif
 
 	return 0;
 }
@@ -1594,6 +1710,15 @@ wl_control_wl_start(struct net_device *dev)
 	WL_TRACE(("Exited %s \n", __FUNCTION__));
 
 	dhd_os_start_unlock(iw->pub);
+
+#ifdef WL_PROTECT
+	if (g_wl_protect && !g_wl_protect->timer_on) {
+		g_wl_protect->timer_on = 1;
+		mod_timer(&g_wl_protect->timer, jiffies + WL_PROTECT_TIME*HZ/1000);
+		WL_TRACE(("%s Start WL Protect Timer\n", __FUNCTION__));
+	}
+#endif
+
 	return ret;
 }
 
@@ -1620,6 +1745,14 @@ wl_iw_control_wl_off(
 		return -1;
 	}
 	dhd_os_start_lock(iw->pub);
+
+#ifdef WL_PROTECT
+	if (g_wl_protect && g_wl_protect->timer_on) {
+		g_wl_protect->timer_on = 0;
+		del_timer_sync(&g_wl_protect->timer);
+		WL_TRACE(("%s Stop WL Protect Timer\n", __FUNCTION__));
+	}
+#endif
 
 #ifdef SOFTAP
 	ap_cfg_running = FALSE;
@@ -6502,6 +6635,24 @@ static int set_ap_cfg(struct net_device *dev, struct ap_profile *ap)
 		}
 	}
 #endif 
+#ifdef WL_IW_AUTO_TXPOWER_ADJ
+	/* get default tx power value */
+	if (!default_tx_power) {
+		dev_wlc_intvar_get(dev, "qtxpower", &default_tx_power);
+		WL_TRACE(("default tx power is %d\n", default_tx_power));
+	}
+	{
+		int tw_power_set_value = default_tx_power;
+		if (channel == 1)
+			tw_power_set_value = 53;
+		else if (channel == 11)
+			tw_power_set_value = 46;
+
+		WL_TRACE(("set tx power to 0x%x\n", tw_power_set_value));
+		tw_power_set_value |= WL_TXPWR_OVERRIDE;
+		dev_wlc_intvar_set(dev, "qtxpower", tw_power_set_value);
+	}
+#endif
 fail:
 	WL_SOFTAP(("%s exit with %d\n", __FUNCTION__, res));
 
@@ -7902,6 +8053,10 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 			} else {
 				WL_TRACE(("STA_Link Down\n"));
 				g_ss_cache_ctrl.m_link_down = 1;
+				iw_link_state = 0;
+#ifdef WL_IW_AUTO_TXPOWER_ADJ
+				iw_link_state_changed = 1;
+#endif
 			}
 #else
 			g_ss_cache_ctrl.m_link_down = 1;
@@ -7927,6 +8082,10 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 				wl_iw_send_priv_event(priv_dev, "AP_UP");
 			} else {
 				WL_TRACE(("STA_LINK_UP\n"));
+				iw_link_state = 1;
+#ifdef WL_IW_AUTO_TXPOWER_ADJ
+				iw_link_state_changed = 1;
+#endif
 #if defined(ROAM_NOT_USED)
 				roam_no_success_send = FALSE;
 				roam_no_success = 0;
@@ -8323,6 +8482,236 @@ wl_iw_bt_init(struct net_device *dev)
 	return 0;
 }
 
+#ifdef WL_PROTECT
+static void
+wl_iw_sta_restart(struct net_device *dev)
+{
+	wl_iw_t *iw;
+	union iwreq_data wrqu;
+	char extra[IW_CUSTOM_MAX + 1];
+	int cmd = 0;
+
+	WL_TRACE(("Enter %s\n", __FUNCTION__));
+
+	if (!dev) {
+		WL_ERROR(("%s: dev is null\n", __FUNCTION__));
+		return;
+	}
+
+	iw = *(wl_iw_t **)netdev_priv(dev);
+
+	if (!iw) {
+		WL_ERROR(("%s: wl is null\n", __FUNCTION__));
+		return;
+	}
+
+	dhd_os_start_lock(iw->pub);
+
+#if defined(WL_IW_USE_ISCAN)
+	g_iscan->iscan_state = ISCAN_STATE_IDLE;
+#endif
+
+	dhd_dev_reset(dev, 1);
+
+#if defined(BCMLXSDMMC)
+	sdioh_stop(NULL);
+#endif
+
+	dhd_customer_gpio_wlan_ctrl(WLAN_RESET_OFF);
+
+	bcm_mdelay(100);
+	dhd_customer_gpio_wlan_ctrl(WLAN_RESET_ON);
+
+#if defined(BCMLXSDMMC)
+	sdioh_start(NULL, 0);
+#endif
+
+	dhd_dev_reset(dev, 0);
+
+#if defined(BCMLXSDMMC)
+	sdioh_start(NULL, 1);
+#endif
+
+	dhd_dev_init_ioctl(dev);
+
+	bcm_mdelay(300);
+
+	if (iw_link_state) {
+		cmd = SIOCGIWAP;
+		bzero(wrqu.addr.sa_data, ETHER_ADDR_LEN);
+		wrqu.addr.sa_family = ARPHRD_ETHER;
+		bzero(&extra, ETHER_ADDR_LEN);
+		wireless_send_event(dev, cmd, &wrqu, extra);
+		iw_link_state = 0;
+	}
+
+	dhd_os_start_unlock(iw->pub);
+	return;
+}
+
+static void wl_iw_ap_restart(void)
+{
+	WL_SOFTAP(("Enter %s...\n",     __FUNCTION__));
+
+	ap_cfg_running = FALSE;
+	ap_net_dev = NULL;
+
+	set_ap_cfg(priv_dev, &my_ap);
+
+	WL_SOFTAP(("SOFTAP - ENABLE BSS \n"));
+
+#ifndef AP_ONLY
+	if (ap_net_dev == NULL) {
+		printk("ERROR: SOFTAP net_dev* is NULL !!!\n");
+	} else {
+		iwpriv_en_ap_bss(ap_net_dev, NULL, NULL, NULL);
+	}
+#endif
+
+}
+
+static void wl_iw_restart(struct net_device *dev)
+{
+
+	wl_iw_sta_restart(dev);
+	if ( ap_cfg_running )
+		wl_iw_ap_restart();
+
+	/* reset the hang counter */
+	net_os_clear_hang_message(dev);
+
+}
+
+static int
+_wl_protect_sysioc_thread(void *data)
+{
+	static int wlp_fail_count = 0;
+	int isup;
+	int ret = 0;
+	wl_iw_t *iw;
+
+	DAEMONIZE("wlp_sysioc");
+
+	if (!priv_dev) {
+		WL_ERROR(("%s: priv_dev is null\n", __FUNCTION__));
+		goto end;
+	}
+
+	iw = *(wl_iw_t **)netdev_priv(priv_dev);
+
+	if (!iw) {
+		WL_ERROR(("%s: wl is null\n", __FUNCTION__));
+		goto end;
+	}
+
+	while (down_interruptible(&g_wl_protect->wlp_sem) == 0) {
+
+		//WAKE_LOCK_INIT(iw->pub, WAKE_LOCK_PROTECT, "_wl_protect_sysioc_thread");
+		//WAKE_LOCK(iw->pub, WAKE_LOCK_PROTECT);
+		net_os_wake_lock(priv_dev);
+
+		if (g_wl_protect->timer_on) {
+			g_wl_protect->timer_on = 0;
+			del_timer_sync(&g_wl_protect->timer);
+		}
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
+		rtnl_lock();
+#endif
+
+		if ( g_wl_protect->reset_now ){
+			g_wl_protect->reset_now = 0;
+			wl_iw_restart(priv_dev);
+		} else {
+			if ((ret = dev_wlc_ioctl(priv_dev, WLC_GET_UP, &isup, sizeof(isup))) != 0)
+				wlp_fail_count++;
+			else
+				wlp_fail_count = 0;
+
+			if (wlp_fail_count == WL_MAX_FAIL_COUNT) {
+				wl_iw_restart(priv_dev);
+			}
+		}
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
+		rtnl_unlock();
+#endif
+		mod_timer(&g_wl_protect->timer, jiffies + WL_PROTECT_TIME*HZ/1000);
+		g_wl_protect->timer_on = 1;
+
+		//WAKE_UNLOCK(iw->pub, WAKE_LOCK_PROTECT);
+		//WAKE_LOCK_DESTROY(iw->pub, WAKE_LOCK_PROTECT);
+		net_os_wake_unlock(priv_dev);
+	}
+
+	if (g_wl_protect->timer_on) {
+		g_wl_protect->timer_on = 0;
+		del_timer_sync(&g_wl_protect->timer);
+	}
+
+end:
+	complete_and_exit(&g_wl_protect->wlp_exited, 0);
+}
+
+static void
+wl_iw_protect_timerfunc(ulong data)
+{
+	wlp_info_t  *wlp_local = (wlp_info_t *)data;
+	wlp_local->timer_on = 0;
+	WL_TRACE(("%s\n", __FUNCTION__));
+
+	up(&wlp_local->wlp_sem);
+}
+
+static int
+wl_iw_protect_init(void)
+{
+	wlp_info_t *wl_protect = NULL;
+
+	wl_protect = kmalloc(sizeof(wlp_info_t), GFP_KERNEL);
+	if (!wl_protect)
+		return -ENOMEM;
+
+	memset(wl_protect, 0, sizeof(wlp_info_t));
+	wl_protect->wlp_pid = -1;
+	g_wl_protect = wl_protect;
+
+
+	init_timer(&wl_protect->timer);
+	wl_protect->timer.data = (ulong)wl_protect;
+	wl_protect->timer.function = wl_iw_protect_timerfunc;
+	wl_protect->timer_on = 0;
+
+	sema_init(&wl_protect->wlp_sem, 0);
+	init_completion(&wl_protect->wlp_exited);
+	wl_protect->wlp_pid = kernel_thread(_wl_protect_sysioc_thread, wl_protect, 0);
+	if (wl_protect->wlp_pid < 0) {
+		WL_ERROR(("Failed in %s\n", __FUNCTION__));
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void
+wl_iw_protect_release(void)
+{
+	wlp_info_t *local = g_wl_protect;
+
+	if (!local) {
+		return;
+	}
+
+	if (local->wlp_pid >= 0) {
+		KILL_PROC(local->wlp_pid, SIGTERM);
+		wait_for_completion(&local->wlp_exited);
+	}
+	kfree(local);
+	g_wl_protect = NULL;
+}
+
+#endif //WL_PROTECT
+
 int wl_iw_attach(struct net_device *dev, void *dhdp)
 {
 	int params_size;
@@ -8397,6 +8786,10 @@ int wl_iw_attach(struct net_device *dev, void *dhdp)
 
 	wl_iw_bt_init(dev);
 
+#ifdef WL_PROTECT
+	wl_iw_protect_init();
+#endif
+
 	return 0;
 }
 
@@ -8432,6 +8825,11 @@ void wl_iw_detach(void)
 	wl_iw_release_ss_cache_ctrl();
 #endif
 	wl_iw_bt_release();
+
+#ifdef WL_PROTECT
+	wl_iw_protect_release();
+#endif
+
 #ifdef SOFTAP
 	if (ap_cfg_running) {
 		WL_TRACE(("\n%s AP is going down\n", __FUNCTION__));
