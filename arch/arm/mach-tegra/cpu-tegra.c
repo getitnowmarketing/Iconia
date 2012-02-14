@@ -300,9 +300,10 @@ static int tegra_pm_notify(struct notifier_block *nb, unsigned long event,
 			freq_table[suspend_index].frequency);
 		tegra_update_cpu_speed(freq_table[suspend_index].frequency);
 	} else if (event == PM_POST_SUSPEND) {
-		unsigned int freq;
+		unsigned int freq = tegra_cpu_highest_speed();
+		freq = throttle_governor_speed(freq);
 		is_suspended = false;
-		tegra_cpu_cap_highest_speed(&freq);
+		tegra_update_cpu_speed(freq);
                 pr_info("Tegra cpufreq resume: restoring frequency to %d kHz\n",
                         freq);
 	}
