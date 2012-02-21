@@ -3159,16 +3159,6 @@ int net_os_send_hang_message(struct net_device *dev)
 	return ret;
 }
 
-void net_os_clear_hang_message(struct net_device *dev)
-{
-	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
-
-	if (dhd)
-		dhd->hang_was_sent = 0;
-
-	return;
-}
-
 void dhd_bus_country_set(struct net_device *dev, wl_country_t *cspec)
 {
 	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
